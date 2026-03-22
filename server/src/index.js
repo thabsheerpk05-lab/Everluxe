@@ -15,6 +15,7 @@ import ameerRoutes from "./routes/ameers.js";
 import providerRoutes from "./routes/providers.js";
 import busRoutes from "./routes/buses.js";
 import collectionRoutes from "./routes/collections.js";
+import prisma from "./lib/prisma.js";
 
 dotenv.config();
 
@@ -58,8 +59,20 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: "Internal server error" });
 });
 
-app.listen(PORT, () => {
-  console.log(`API running on http://localhost:${PORT}`);
-});
+const startServer = async () => {
+  try {
+    await prisma.$connect();
+    console.log("Database connected");
+  } catch (err) {
+    console.error("Database connection failed:", err?.message || err);
+    process.exit(1);
+  }
+
+  app.listen(PORT, () => {
+    console.log(`API running on http://localhost:${PORT}`);
+  });
+};
+
+startServer();
 
 
