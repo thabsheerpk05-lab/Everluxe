@@ -26,7 +26,7 @@ const navItems = [
   { name: "Payments", path: "/payments", icon: CreditCard, permission: "can_manage_payments" }
 ];
 
-export default function Sidebar({ open }) {
+export default function Sidebar({ open, onClose }) {
   const { user } = useAuth();
   const perms = parsePermissions(user?.permissions);
 
@@ -62,6 +62,11 @@ export default function Sidebar({ open }) {
             key={item.path}
             to={item.path}
             end={item.path === "/"}
+            onClick={() => {
+              if (open) {
+                onClose?.();
+              }
+            }}
             className={({ isActive }) =>
               `flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold transition-colors ${
                 isActive
