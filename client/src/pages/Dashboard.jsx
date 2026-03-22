@@ -273,7 +273,7 @@ export default function Dashboard() {
           <div className="space-y-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-sand-500">Overview</p>
-              <h1 className="font-display text-4xl text-ink">Wadi Noor Dashboard</h1>
+              <h1 className="font-display text-4xl text-ink">WadiNoor Dashboard</h1>
               <p className="mt-2 text-sm text-sand-700">Live overview of trips, travelers, and finance signals.</p>
             </div>
             <div className="flex flex-wrap gap-2">
