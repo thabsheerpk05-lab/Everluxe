@@ -1,0 +1,155 @@
+// Prisma schema for Wadinoor Portal ERP
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  name        String
+  email       String   @unique
+  password    String
+  role        String   @default("STAFF")
+  permissions String   @default("{}")
+  createdAt   DateTime @default(now())
+
+  trips       Trip[]
+  expenses    Expense[]
+  travelers   Traveler[] @relation("TravelerCreatedBy")
+  collections TripCollection[] @relation("CollectionReceivedBy")
+}
+
+model Package {
+  id            Int    @id @default(autoincrement())
+  packageName   String
+  route         String
+  durationDays  Int
+  departureDay  String
+  departureTime String
+  trips         Trip[]
+}
+
+
+model Driver {
+  id            Int    @id @default(autoincrement())
+  driverName    String
+  phoneNumber   String
+  passportNumber String?
+  trips         Trip[] @relation("TripDriver")
+  coTrips       Trip[] @relation("TripCoDriver")
+}
+
+model Bus {
+  id        Int      @id @default(autoincrement())
+  busName   String
+  busNumber String   @unique
+  createdAt DateTime @default(now())
+}
+
+model Ameer {
+  id            Int    @id @default(autoincrement())
+  name          String
+  phone         String
+  passportNumber String?
+  notes         String?
+
+  trips         Trip[]
+  collections   TripCollection[]
+}
+
+model ServiceProvider {
+  id           Int    @id @default(autoincrement())
+  providerName String
+
+  travelers    Traveler[]
+}
+
+model Trip {
+  id            Int      @id @default(autoincrement())
+  packageId     Int
+  tripDate      DateTime
+  status        String   @default("OPEN")
+  seasonalPrice Float
+  notes         String?
+  createdById   Int
+  createdAt     DateTime @default(now())
+  driverId      Int?
+  coDriverId    Int?
+  ameerId       Int?
+
+  package       Package  @relation(fields: [packageId], references: [id])
+  createdBy     User     @relation(fields: [createdById], references: [id])
+  driver        Driver?  @relation("TripDriver", fields: [driverId], references: [id])
+  coDriver      Driver?  @relation("TripCoDriver", fields: [coDriverId], references: [id])
+  ameer         Ameer?   @relation(fields: [ameerId], references: [id])
+  travelers     Traveler[]
+  collections   TripCollection[]
+  expenses      Expense[]
+}
+
+model Traveler {
+  id                Int      @id @default(autoincrement())
+  travelerName      String
+  passportOrIqama   String
+  phoneNumber       String
+  travelerType      String
+  familyCount       Int      @default(1)
+  coPassengers      String?
+  tripId            Int
+  amountPaid        Float    @default(0) @map("paymentAmount")
+  paymentType       String?
+  paymentStatus     String   @default("UNPAID")
+  extraRoomCharge   Float    @default(0)
+  customPrice       Float    @default(0) @map("discountAmount")
+  finalAmount       Float    @default(0)
+  status            String   @default("ACTIVE")
+  serviceProviderId Int?
+  createdById       Int?
+  createdAt         DateTime @default(now())
+
+  trip             Trip     @relation(fields: [tripId], references: [id])
+  serviceProvider  ServiceProvider? @relation(fields: [serviceProviderId], references: [id])
+  createdBy        User?    @relation("TravelerCreatedBy", fields: [createdById], references: [id])
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  date        DateTime
+  category    String
+  description String
+  amount      Float
+  tripId      Int?
+  createdById Int
+  createdAt   DateTime @default(now())
+
+  trip        Trip?    @relation(fields: [tripId], references: [id])
+  createdBy   User     @relation(fields: [createdById], references: [id])
+}
+
+model TripCollection {
+  id                 Int      @id @default(autoincrement())
+  tripId             Int
+  ameerId            Int
+  amountReceived     Float
+  date               DateTime
+  receivedByAdminId  Int
+  createdAt          DateTime @default(now())
+
+  trip               Trip     @relation(fields: [tripId], references: [id])
+  ameer              Ameer    @relation(fields: [ameerId], references: [id])
+  receivedByAdmin    User     @relation("CollectionReceivedBy", fields: [receivedByAdminId], references: [id])
+}
+
+
+
+
+
+
+
+
+
