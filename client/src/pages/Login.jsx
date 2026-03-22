@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.
 import { Input } from "../components/ui/input.jsx";
 import { Button } from "../components/ui/button.jsx";
 import { handleEnterToNext } from "../utils/enterToNext.js";
+import { apiFetch } from "../api/client.js";
 
 // CRITICAL: This line must say "export default function Login"
 export default function Login() {
@@ -20,17 +21,10 @@ export default function Login() {
     event.preventDefault();
     setLoading(true);
     try {
-      const response = await fetch("http://localhost:4000/api/auth/login", {
+      const data = await apiFetch("/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password })
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || "Login failed");
-      }
 
       // Passes user and token to context
       login(data.user, data.token);
