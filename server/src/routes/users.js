@@ -2,19 +2,20 @@ import express from "express";
 import prisma from "../lib/prisma.js";
 import bcrypt from "bcryptjs";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 
-router.get("/", authenticate, requireAdmin, async (req, res) => {
+router.get("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const users = await prisma.user.findMany({
     orderBy: { createdAt: "desc" },
     select: { id: true, name: true, email: true, role: true, permissions: true, createdAt: true }
   });
 
   return res.json(users);
-});
+}));
 
-router.put("/:id", authenticate, requireAdmin, async (req, res) => {
+router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const { name, email, role, password, permissions } = req.body || {};
 
@@ -58,9 +59,9 @@ router.put("/:id", authenticate, requireAdmin, async (req, res) => {
   });
 
   return res.json(updated);
-});
+}));
 
-router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
+router.delete("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   if (id === req.user.id) {
     return res.status(400).json({ message: "You cannot delete your own account" });
@@ -68,8 +69,10 @@ router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
 
   await prisma.user.delete({ where: { id } });
   return res.status(204).send();
-});
-
+}));
 export default router;
+
+
+
 
 

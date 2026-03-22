@@ -2,6 +2,7 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import prisma from "../lib/prisma.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 const ameerPermissionsBase = {
@@ -16,12 +17,12 @@ const ameerPermissionsBase = {
   is_ameer: true
 };
 
-router.get("/", authenticate, async (req, res) => {
+router.get("/", authenticate, asyncHandler(async (req, res) => {
   const ameers = await prisma.ameer.findMany({ orderBy: { id: "desc" } });
   return res.json(ameers);
-});
+}));
 
-router.post("/", authenticate, requireAdmin, async (req, res) => {
+router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const { name, phone, notes, passportNumber, email, password } = req.body || {};
   if (!name || !phone) {
     return res.status(400).json({ message: "Ameer name and phone are required" });
@@ -70,9 +71,9 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
   });
 
   return res.status(201).json(created);
-});
+}));
 
-router.put("/:id", authenticate, requireAdmin, async (req, res) => {
+router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const { name, phone, notes, passportNumber, email, password } = req.body || {};
   const updated = await prisma.ameer.update({
@@ -80,15 +81,17 @@ router.put("/:id", authenticate, requireAdmin, async (req, res) => {
     data: { name, phone, notes: notes || null, passportNumber: passportNumber || null }
   });
   return res.json(updated);
-});
+}));
 
-router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
+router.delete("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   await prisma.ameer.delete({ where: { id } });
   return res.status(204).send();
-});
-
+}));
 export default router;
+
+
+
 
 
 

@@ -1,10 +1,11 @@
 import express from "express";
 import prisma from "../lib/prisma.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 
-router.get("/", authenticate, requireAdmin, async (req, res) => {
+router.get("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const collections = await prisma.tripCollection.findMany({
     orderBy: { date: "desc" },
     include: {
@@ -14,9 +15,9 @@ router.get("/", authenticate, requireAdmin, async (req, res) => {
     }
   });
   return res.json(collections);
-});
+}));
 
-router.post("/", authenticate, requireAdmin, async (req, res) => {
+router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const { tripId, ameerId, amountReceived, date } = req.body || {};
   if (!tripId || !ameerId || !amountReceived || !date) {
     return res.status(400).json({ message: "Trip, ameer, amount, and date are required" });
@@ -33,6 +34,8 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
   });
 
   return res.status(201).json(created);
-});
-
+}));
 export default router;
+
+
+

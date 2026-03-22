@@ -2,11 +2,12 @@ import express from "express";
 import prisma from "../lib/prisma.js";
 import { authenticate } from "../middleware/auth.js";
 import { hasPermission, getAmeerContext } from "../lib/permissions.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 const allowedCategories = ["BUS", "ROOM", "MEAL", "TRAVEL", "GENERAL", "OTHER"];
 
-router.get("/", authenticate, async (req, res) => {
+router.get("/", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_view_expenses")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -21,9 +22,9 @@ router.get("/", authenticate, async (req, res) => {
   });
 
   return res.json(expenses);
-});
+}));
 
-router.post("/", authenticate, async (req, res) => {
+router.post("/", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_edit_expenses")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -67,9 +68,9 @@ router.post("/", authenticate, async (req, res) => {
   });
 
   return res.status(201).json(created);
-});
+}));
 
-router.put("/:id", authenticate, async (req, res) => {
+router.put("/:id", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_edit_expenses")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -119,9 +120,9 @@ router.put("/:id", authenticate, async (req, res) => {
   });
 
   return res.json(updated);
-});
+}));
 
-router.delete("/:id", authenticate, async (req, res) => {
+router.delete("/:id", authenticate, asyncHandler(async (req, res) => {
   if (req.user.role !== "ADMIN") {
     return res.status(403).json({ message: "Admin access required" });
   }
@@ -129,9 +130,11 @@ router.delete("/:id", authenticate, async (req, res) => {
   const id = Number(req.params.id);
   await prisma.expense.delete({ where: { id } });
   return res.status(204).send();
-});
-
+}));
 export default router;
+
+
+
 
 
 

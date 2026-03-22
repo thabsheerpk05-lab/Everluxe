@@ -2,6 +2,7 @@ import express from "express";
 import prisma from "../lib/prisma.js";
 import { authenticate } from "../middleware/auth.js";
 import { hasPermission, getAmeerContext } from "../lib/permissions.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 const allowedTravelerTypes = ["FAMILY", "BACHELOR"];
@@ -23,7 +24,7 @@ async function getTripPrice(tripId) {
   return trip;
 }
 
-router.get("/", authenticate, async (req, res) => {
+router.get("/", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_view_travelers")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -47,9 +48,9 @@ router.get("/", authenticate, async (req, res) => {
   });
 
   return res.json(travelers);
-});
+}));
 
-router.get("/search", authenticate, async (req, res) => {
+router.get("/search", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_manage_payments")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -82,9 +83,9 @@ router.get("/search", authenticate, async (req, res) => {
   });
 
   return res.json(travelers);
-});
+}));
 
-router.post("/", authenticate, async (req, res) => {
+router.post("/", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_edit_travelers")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -179,9 +180,9 @@ router.post("/", authenticate, async (req, res) => {
   });
 
   return res.status(201).json(created);
-});
+}));
 
-router.put("/:id", authenticate, async (req, res) => {
+router.put("/:id", authenticate, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const existing = await prisma.traveler.findUnique({
     where: { id },
@@ -296,9 +297,9 @@ router.put("/:id", authenticate, async (req, res) => {
   });
 
   return res.json(updated);
-});
+}));
 
-router.delete("/:id", authenticate, async (req, res) => {
+router.delete("/:id", authenticate, asyncHandler(async (req, res) => {
   if (req.user.role !== "ADMIN") {
     return res.status(403).json({ message: "Admin access required" });
   }
@@ -306,7 +307,7 @@ router.delete("/:id", authenticate, async (req, res) => {
   const id = Number(req.params.id);
   await prisma.traveler.delete({ where: { id } });
   return res.status(204).send();
-});
+}));
 
 function normalizePayment(amountPaidInput, finalAmount, paymentTypeInput) {
   const total = Number(finalAmount) || 0;
@@ -330,6 +331,9 @@ function derivePaymentStatus(amountPaid, finalAmount) {
 }
 
 export default router;
+
+
+
 
 
 

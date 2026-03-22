@@ -2,11 +2,12 @@ import express from "express";
 import prisma from "../lib/prisma.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { hasPermission, getAmeerContext } from "../lib/permissions.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 const allowedStatuses = ["OPEN", "FINISHED"];
 
-router.get("/", authenticate, async (req, res) => {
+router.get("/", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_view_trips")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -28,9 +29,9 @@ router.get("/", authenticate, async (req, res) => {
   });
 
   return res.json(trips);
-});
+}));
 
-router.post("/", authenticate, requireAdmin, async (req, res) => {
+router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const { packageId, tripDate, seasonalPrice, notes, driverId, coDriverId, ameerId, busId } = req.body || {};
   if (!packageId || !tripDate || !seasonalPrice || !driverId || !ameerId || !busId) {
     return res.status(400).json({ message: "Package, trip date, price, driver, ameer, and bus are required" });
@@ -52,9 +53,9 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
   });
 
   return res.status(201).json(created);
-});
+}));
 
-router.put("/:id", authenticate, requireAdmin, async (req, res) => {
+router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const { packageId, tripDate, seasonalPrice, notes, driverId, coDriverId, ameerId, busId, status } = req.body || {};
   if (!packageId || !tripDate || !seasonalPrice || !driverId || !ameerId || !busId) {
@@ -81,9 +82,9 @@ router.put("/:id", authenticate, requireAdmin, async (req, res) => {
   });
 
   return res.json(updated);
-});
+}));
 
-router.put("/:id/status", authenticate, requireAdmin, async (req, res) => {
+router.put("/:id/status", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const { status } = req.body || {};
   if (!allowedStatuses.includes(status)) {
@@ -104,15 +105,17 @@ router.put("/:id/status", authenticate, requireAdmin, async (req, res) => {
   });
 
   return res.json(updated);
-});
+}));
 
-router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
+router.delete("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   await prisma.trip.delete({ where: { id } });
   return res.status(204).send();
-});
-
+}));
 export default router;
+
+
+
 
 
 

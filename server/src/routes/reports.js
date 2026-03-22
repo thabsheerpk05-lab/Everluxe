@@ -2,6 +2,7 @@ import express from "express";
 import prisma from "../lib/prisma.js";
 import { authenticate } from "../middleware/auth.js";
 import { hasPermission, getAmeerContext } from "../lib/permissions.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 
@@ -34,7 +35,7 @@ function normalizeProviderName(value) {
   return String(value || "").toLowerCase().replace(/\s+/g, "");
 }
 
-router.get("/summary", authenticate, async (req, res) => {
+router.get("/summary", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_view_reports")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -56,7 +57,6 @@ router.get("/summary", authenticate, async (req, res) => {
     amountPaid: true
   }
 });
-
   const totalRevenue = revenueAgg._sum.amountPaid || 0;
   const expenseAgg = await prisma.expense.aggregate({
   _sum: {
@@ -116,9 +116,9 @@ router.get("/summary", authenticate, async (req, res) => {
     },
     monthly
   });
-});
+}));
 
-router.get("/trip/:tripId", authenticate, async (req, res) => {
+router.get("/trip/:tripId", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_view_reports")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -169,9 +169,9 @@ router.get("/trip/:tripId", authenticate, async (req, res) => {
     },
     passengers: formatted
   });
-});
+}));
 
-router.get("/financial", authenticate, async (req, res) => {
+router.get("/financial", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_view_reports")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -252,9 +252,9 @@ router.get("/financial", authenticate, async (req, res) => {
     netProfit: totalRevenue - totalExpenses,
     monthly
   });
-});
+}));
 
-router.get("/unpaid", authenticate, async (req, res) => {
+router.get("/unpaid", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_view_reports")) {
     return res.status(403).json({ message: "Access denied" });
   }
@@ -318,6 +318,8 @@ router.get("/unpaid", authenticate, async (req, res) => {
     totalUnpaid,
     travelers: rows
   });
-});
-
+}));
 export default router;
+
+
+

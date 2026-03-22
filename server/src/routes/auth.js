@@ -3,11 +3,12 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
+import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "wadi-noor-fallback";
 
-router.post("/login", async (req, res) => {
+router.post("/login", asyncHandler(async (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) {
     return res.status(400).json({ message: "Email and password are required" });
@@ -47,18 +48,18 @@ router.post("/login", async (req, res) => {
       permissions: user.permissions
     }
   });
-});
+}));
 
-router.get("/me", authenticate, async (req, res) => {
+router.get("/me", authenticate, asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.user.id },
     select: { id: true, name: true, email: true, role: true, permissions: true, createdAt: true }
   });
 
   return res.json(user);
-});
+}));
 
-router.post("/register", async (req, res) => {
+router.post("/register", asyncHandler(async (req, res) => {
   const { name, email, password, role, permissions } = req.body || {};
   if (!name || !email || !password) {
     return res.status(400).json({ message: "Name, email, and password are required" });
@@ -104,8 +105,10 @@ router.post("/register", async (req, res) => {
   });
 
   return res.status(201).json(newUser);
-});
-
+}));
 export default router;
+
+
+
 
 
