@@ -49,6 +49,7 @@ export default function Trips() {
   const [packages, setPackages] = useState([]);
   const [drivers, setDrivers] = useState([]);
   const [ameers, setAmeers] = useState([]);
+  const [buses, setBuses] = useState([]);
   const [trips, setTrips] = useState([]);
   const [collections, setCollections] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -71,7 +72,8 @@ export default function Trips() {
     notes: "",
     driverId: "",
     coDriverId: "",
-    ameerId: ""
+    ameerId: "",
+    busId: ""
   });
   const [collectionForm, setCollectionForm] = useState({
     tripId: "",
@@ -86,15 +88,17 @@ export default function Trips() {
       apiFetch("/trips"),
       apiFetch("/drivers"),
       apiFetch("/ameers"),
+      user?.role === "ADMIN" ? apiFetch("/buses") : Promise.resolve([]),
       user?.role === "ADMIN" ? apiFetch("/collections") : Promise.resolve([]),
       canViewExpenses ? apiFetch("/expenses") : Promise.resolve([])
     ];
     const results = await Promise.all(tasks);
-    const [pkgData, tripData, driverData, ameerData, collectionData, expenseData] = results;
+    const [pkgData, tripData, driverData, ameerData, busData, collectionData, expenseData] = results;
     setPackages(pkgData || []);
     setTrips(tripData || []);
     setDrivers(driverData || []);
     setAmeers(ameerData || []);
+    setBuses(busData || []);
     setCollections(collectionData || []);
     setExpenses(expenseData || []);
   };
@@ -159,7 +163,16 @@ export default function Trips() {
   }, [expenses]);
 
   const resetTripForm = () => {
-    setForm({ packageId: "", tripDate: "", seasonalPrice: "", notes: "", driverId: "", coDriverId: "", ameerId: "" });
+    setForm({
+      packageId: "",
+      tripDate: "",
+      seasonalPrice: "",
+      notes: "",
+      driverId: "",
+      coDriverId: "",
+      ameerId: "",
+      busId: ""
+    });
   };
 
   const resetCollectionForm = () => {
@@ -204,7 +217,8 @@ export default function Trips() {
       notes: trip.notes || "",
       driverId: trip.driverId || "",
       coDriverId: trip.coDriverId || "",
-      ameerId: trip.ameerId || ""
+      ameerId: trip.ameerId || "",
+      busId: trip.busId || ""
     });
     setIsTripOpen(true);
   };
@@ -399,6 +413,17 @@ export default function Trips() {
               </Select>
             </div>
             <div>
+              <label className="text-xs font-semibold text-sand-600">Bus</label>
+              <Select value={form.busId} onChange={(e) => setForm({ ...form, busId: e.target.value })}>
+                <option value="">Select bus</option>
+                {buses.map((bus) => (
+                  <option key={bus.id} value={bus.id}>
+                    {bus.busName} ({bus.busNumber})
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
               <label className="text-xs font-semibold text-sand-600">Seasonal Price (SAR)</label>
               <Input
                 type="number"
@@ -533,6 +558,7 @@ export default function Trips() {
                 <TableHeaderCell onClick={() => toggleSort("route")} className="cursor-pointer">Route</TableHeaderCell>
                 <TableHeaderCell>Driver</TableHeaderCell>
                 <TableHeaderCell>Co-driver</TableHeaderCell>
+                <TableHeaderCell>Bus</TableHeaderCell>
                 <TableHeaderCell>Ameer</TableHeaderCell>
                 <TableHeaderCell>Status</TableHeaderCell>
                 <TableHeaderCell onClick={() => toggleSort("travelers")} className="cursor-pointer">Travelers</TableHeaderCell>
@@ -556,6 +582,7 @@ export default function Trips() {
                   <TableCell>{trip.package?.route}</TableCell>
                   <TableCell>{trip.driver?.driverName || "-"}</TableCell>
                   <TableCell>{trip.coDriver?.driverName || "-"}</TableCell>
+                  <TableCell>{trip.bus ? `${trip.bus.busName} (${trip.bus.busNumber})` : "-"}</TableCell>
                   <TableCell>{trip.ameer?.name || "-"}</TableCell>
                   <TableCell>{statusLabels[trip.status] || trip.status || "-"}</TableCell>
                   <TableCell>{trip._count?.travelers ?? 0}</TableCell>
@@ -606,6 +633,9 @@ export default function Trips() {
     </div>
   );
 }
+
+
+
 
 
 

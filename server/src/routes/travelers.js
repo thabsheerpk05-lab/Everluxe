@@ -141,6 +141,16 @@ router.post("/", authenticate, async (req, res) => {
     return res.status(403).json({ message: "You can only manage open trips" });
   }
 
+  const nextStatus = status || "ACTIVE";
+  if (nextStatus !== "CANCELLED") {
+    const activeCount = await prisma.traveler.count({
+      where: { tripId: Number(tripId), status: "ACTIVE" }
+    });
+    if (activeCount >= 50) {
+      return res.status(400).json({ message: "Trip already has 50 active travelers" });
+    }
+  }
+
   const customPriceValue = customPrice ?? discountAmount ?? 0;
   const amountPaidValue = amountPaid ?? paymentAmount ?? 0;
   const finalAmount = calcFinalAmount(trip.seasonalPrice, extraRoomCharge, customPriceValue, familyCount);

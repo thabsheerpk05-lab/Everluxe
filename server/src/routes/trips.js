@@ -22,6 +22,7 @@ router.get("/", authenticate, async (req, res) => {
       driver: true,
       coDriver: true,
       ameer: true,
+      bus: true,
       _count: { select: { travelers: true } }
     }
   });
@@ -30,9 +31,9 @@ router.get("/", authenticate, async (req, res) => {
 });
 
 router.post("/", authenticate, requireAdmin, async (req, res) => {
-  const { packageId, tripDate, seasonalPrice, notes, driverId, coDriverId, ameerId } = req.body || {};
-  if (!packageId || !tripDate || !seasonalPrice || !driverId || !ameerId) {
-    return res.status(400).json({ message: "Package, trip date, price, driver, and ameer are required" });
+  const { packageId, tripDate, seasonalPrice, notes, driverId, coDriverId, ameerId, busId } = req.body || {};
+  if (!packageId || !tripDate || !seasonalPrice || !driverId || !ameerId || !busId) {
+    return res.status(400).json({ message: "Package, trip date, price, driver, ameer, and bus are required" });
   }
 
   const created = await prisma.trip.create({
@@ -44,9 +45,10 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
       driverId: Number(driverId),
       coDriverId: coDriverId ? Number(coDriverId) : null,
       ameerId: Number(ameerId),
+      busId: Number(busId),
       createdById: req.user.id
     },
-    include: { package: true, driver: true, coDriver: true, ameer: true }
+    include: { package: true, driver: true, coDriver: true, ameer: true, bus: true }
   });
 
   return res.status(201).json(created);
@@ -54,7 +56,10 @@ router.post("/", authenticate, requireAdmin, async (req, res) => {
 
 router.put("/:id", authenticate, requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  const { packageId, tripDate, seasonalPrice, notes, driverId, coDriverId, ameerId, status } = req.body || {};
+  const { packageId, tripDate, seasonalPrice, notes, driverId, coDriverId, ameerId, busId, status } = req.body || {};
+  if (!packageId || !tripDate || !seasonalPrice || !driverId || !ameerId || !busId) {
+    return res.status(400).json({ message: "Package, trip date, price, driver, ameer, and bus are required" });
+  }
   if (status && !allowedStatuses.includes(status)) {
     return res.status(400).json({ message: "Invalid trip status" });
   }
@@ -69,9 +74,10 @@ router.put("/:id", authenticate, requireAdmin, async (req, res) => {
       driverId: Number(driverId),
       coDriverId: coDriverId ? Number(coDriverId) : null,
       ameerId: Number(ameerId),
+      busId: Number(busId),
       status: status || undefined
     },
-    include: { package: true, driver: true, coDriver: true, ameer: true }
+    include: { package: true, driver: true, coDriver: true, ameer: true, bus: true }
   });
 
   return res.json(updated);
@@ -92,6 +98,7 @@ router.put("/:id/status", authenticate, requireAdmin, async (req, res) => {
       driver: true,
       coDriver: true,
       ameer: true,
+      bus: true,
       _count: { select: { travelers: true } }
     }
   });
@@ -106,6 +113,9 @@ router.delete("/:id", authenticate, requireAdmin, async (req, res) => {
 });
 
 export default router;
+
+
+
 
 
 

@@ -49,6 +49,7 @@ model Bus {
   busName   String
   busNumber String   @unique
   createdAt DateTime @default(now())
+  trips     Trip[]
 }
 
 model Ameer {
@@ -81,12 +82,14 @@ model Trip {
   driverId      Int?
   coDriverId    Int?
   ameerId       Int?
+  busId         Int?
 
   package       Package  @relation(fields: [packageId], references: [id])
   createdBy     User     @relation(fields: [createdById], references: [id])
   driver        Driver?  @relation("TripDriver", fields: [driverId], references: [id])
   coDriver      Driver?  @relation("TripCoDriver", fields: [coDriverId], references: [id])
   ameer         Ameer?   @relation(fields: [ameerId], references: [id])
+  bus           Bus?     @relation(fields: [busId], references: [id])
   travelers     Traveler[]
   collections   TripCollection[]
   expenses      Expense[]
@@ -104,6 +107,7 @@ model Traveler {
   amountPaid        Float    @default(0) @map("paymentAmount")
   paymentType       String?
   paymentStatus     String   @default("UNPAID")
+  paymentMethod     String   @default("Cash")
   extraRoomCharge   Float    @default(0)
   customPrice       Float    @default(0) @map("discountAmount")
   finalAmount       Float    @default(0)
@@ -144,6 +148,8 @@ model TripCollection {
   ameer              Ameer    @relation(fields: [ameerId], references: [id])
   receivedByAdmin    User     @relation("CollectionReceivedBy", fields: [receivedByAdminId], references: [id])
 }
+
+
 
 
 

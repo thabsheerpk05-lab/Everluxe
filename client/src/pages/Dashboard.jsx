@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api/client.js";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.jsx";
+import { Button } from "../components/ui/button.jsx";
+import { Select } from "../components/ui/select.jsx";
+import { Table, TableHead, TableRow, TableHeaderCell, TableCell } from "../components/ui/table.jsx";
 import { formatCurrency } from "../utils/format.js";
+import { exportIncomeStatementExcel } from "../utils/exportExcel.js";
+import { exportIncomeStatementPdf } from "../utils/exportPdf.js";
 import { cn } from "../utils/cn.js";
 import {
   ResponsiveContainer,
@@ -133,6 +138,9 @@ function MiniStat({ label, value, trend, isLoading, children }) {
 export default function Dashboard() {
   const { toast } = useToast();
   const [data, setData] = useState(null);
+  const [financial, setFinancial] = useState(null);
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [statementMonth, setStatementMonth] = useState("ALL");
   const [error, setError] = useState("");
   const isLoading = !data && !error;
 
@@ -148,6 +156,18 @@ export default function Dashboard() {
     };
     load();
   }, [toast]);
+
+  useEffect(() => {
+    const loadFinancial = async () => {
+      try {
+        const report = await apiFetch(`/reports/financial?year=${year}`);
+        setFinancial(report);
+      } catch (err) {
+        toast({ title: err.message, variant: "error" });
+      }
+    };
+    loadFinancial();
+  }, [year, toast]);
 
   const averageProfit = useMemo(() => {
     if (!data?.monthly?.length) return null;
@@ -175,6 +195,75 @@ export default function Dashboard() {
     `Updated ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date())}`,
     "Last 12 months"
   ];
+
+  const monthOptions = useMemo(
+    () => [
+      { label: "All months", value: "ALL" },
+      ...Array.from({ length: 12 }, (_, idx) => ({
+        label: new Date(2024, idx, 1).toLocaleString("en-GB", { month: "short" }),
+        value: String(idx)
+      }))
+    ],
+    []
+  );
+
+  const formatMonthLabel = (yearValue, monthIndex) => {
+    const month = new Date(yearValue, monthIndex, 1).toLocaleString("en-GB", { month: "short" });
+    const shortYear = String(yearValue).slice(-2);
+    return `${month}-${shortYear}`;
+  };
+
+  const exportFinancial = () => {
+    if (!financial) return;
+    const baseMonths = financial.monthly.map((row, idx) => ({
+      year: financial.year,
+      monthIndex: idx,
+      revenue: row.revenue,
+      expenses: row.expenses,
+      profit: row.profit,
+      internalRevenue: row.internalRevenue,
+      externalRevenue: row.externalRevenue,
+      expenseByCategory: row.expenseByCategory
+    }));
+    const selectedMonths =
+      statementMonth === "ALL"
+        ? baseMonths
+        : baseMonths.filter((_, idx) => String(idx) === String(statementMonth));
+    const suffix =
+      statementMonth === "ALL"
+        ? String(financial.year)
+        : `${financial.year}-${formatMonthLabel(financial.year, Number(statementMonth))}`;
+    exportIncomeStatementExcel(`Profit-Loss-${suffix}.xlsx`, selectedMonths, {
+      headerTitle: "WADINOOR",
+      title: "PROFIT AND LOSS A/C"
+    });
+  };
+
+  const exportFinancialPdf = () => {
+    if (!financial) return;
+    const baseMonths = financial.monthly.map((row, idx) => ({
+      year: financial.year,
+      monthIndex: idx,
+      revenue: row.revenue,
+      expenses: row.expenses,
+      profit: row.profit,
+      internalRevenue: row.internalRevenue,
+      externalRevenue: row.externalRevenue,
+      expenseByCategory: row.expenseByCategory
+    }));
+    const selectedMonths =
+      statementMonth === "ALL"
+        ? baseMonths
+        : baseMonths.filter((_, idx) => String(idx) === String(statementMonth));
+    const suffix =
+      statementMonth === "ALL"
+        ? String(financial.year)
+        : `${financial.year}-${formatMonthLabel(financial.year, Number(statementMonth))}`;
+    exportIncomeStatementPdf(`Profit-Loss-${suffix}.pdf`, selectedMonths, {
+      headerTitle: "WADINOOR",
+      title: "PROFIT AND LOSS A/C"
+    });
+  };
 
   return (
     <div className="space-y-8">
@@ -408,7 +497,81 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </section>
+
+      <section>
+        <Card>
+          <CardHeader>
+            <CardTitle>Financial Reports</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <label className="text-xs font-semibold text-sand-600">Year</label>
+                <Select value={year} onChange={(e) => setYear(Number(e.target.value))}>
+                  {[year - 1, year, year + 1].map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </Select>
+                <label className="text-xs font-semibold text-sand-600">Month</label>
+                <Select value={statementMonth} onChange={(e) => setStatementMonth(e.target.value)}>
+                  {monthOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={exportFinancialPdf} disabled={!financial}>
+                  Export PDF
+                </Button>
+                <Button variant="outline" onClick={exportFinancial} disabled={!financial}>
+                  Export Excel
+                </Button>
+              </div>
+            </div>
+            {financial ? (
+              <div className="mt-4 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="rounded-xl border border-sand-200 bg-white/80 p-4">
+                    <p className="text-xs text-sand-600">Total Revenue</p>
+                    <p className="text-xl font-semibold">{formatCurrency(financial.totalRevenue)}</p>
+                  </div>
+                  <div className="rounded-xl border border-sand-200 bg-white/80 p-4">
+                    <p className="text-xs text-sand-600">Total Expenses</p>
+                    <p className="text-xl font-semibold">{formatCurrency(financial.totalExpenses)}</p>
+                  </div>
+                  <div className="rounded-xl border border-sand-200 bg-white/80 p-4">
+                    <p className="text-xs text-sand-600">Net Profit</p>
+                    <p className="text-xl font-semibold">{formatCurrency(financial.netProfit)}</p>
+                  </div>
+                </div>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableHeaderCell>Month</TableHeaderCell>
+                      <TableHeaderCell>Revenue</TableHeaderCell>
+                      <TableHeaderCell>Expenses</TableHeaderCell>
+                      <TableHeaderCell>Profit</TableHeaderCell>
+                    </TableRow>
+                  </TableHead>
+                  <tbody>
+                    {financial.monthly.map((row) => (
+                      <TableRow key={row.month}>
+                        <TableCell>{row.month}</TableCell>
+                        <TableCell>{formatCurrency(row.revenue)}</TableCell>
+                        <TableCell>{formatCurrency(row.expenses)}</TableCell>
+                        <TableCell>{formatCurrency(row.profit)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }
+
+
 

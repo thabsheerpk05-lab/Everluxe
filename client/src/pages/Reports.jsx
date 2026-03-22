@@ -5,7 +5,7 @@ import { Button } from "../components/ui/button.jsx";
 import { Select } from "../components/ui/select.jsx";
 import { Input } from "../components/ui/input.jsx";
 import { Table, TableHead, TableRow, TableHeaderCell, TableCell } from "../components/ui/table.jsx";
-import { formatCurrency, formatDate } from "../utils/format.js";
+import { formatDate } from "../utils/format.js";
 import { exportToExcel } from "../utils/exportExcel.js";
 import { exportToPdf } from "../utils/exportPdf.js";
 
@@ -16,21 +16,193 @@ const reportTypes = [
 ];
 
 function buildReport(type, passengers) {
+  const safe = (value) => (value === null || value === undefined || value === "" ? "-" : value);
+  const sorted = [...passengers].sort((a, b) => (a.serial ?? 0) - (b.serial ?? 0));
+
   if (type === "BUSLIST") {
+    const parseMembers = (value) => {
+      if (!value) return [];
+      if (Array.isArray(value)) return value.map((item) => {
+        if (typeof item === "string") return item.trim();
+        if (item && typeof item === "object") return String(item.name || "").trim();
+        return "";
+      }).filter(Boolean);
+
+      const raw = String(value).trim();
+      if (!raw) return [];
+      if (raw.startsWith("[") && raw.endsWith("]")) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            return parsed.map((item) => {
+              if (typeof item === "string") return item.trim();
+              if (item && typeof item === "object") return String(item.name || "").trim();
+              return "";
+            }).filter(Boolean);
+          }
+        } catch {
+          return [];
+        }
+      }
+      return raw
+        .split(",")
+        .map((name) => name.trim())
+        .filter(Boolean);
+    };
+
+    const sortedByFamily = [...passengers].sort((a, b) => {
+      const aType = String(a.travelerType || "").toLowerCase();
+      const bType = String(b.travelerType || "").toLowerCase();
+      const typeOrder = (type) => (type === "family" ? 0 : type === "bachelor" ? 1 : 2);
+      const typeDiff = typeOrder(aType) - typeOrder(bType);
+      if (typeDiff !== 0) return typeDiff;
+      const aCount = Number(a.familyCount || 0);
+      const bCount = Number(b.familyCount || 0);
+      if (bType === "family" || aType === "family") {
+        if (bCount !== aCount) return bCount - aCount;
+      }
+      return (a.serial ?? 0) - (b.serial ?? 0);
+    });
+
+    const rows = [];
+    let rowSerial = 1;
+    sortedByFamily.forEach((p) => {
+      const typeRaw = String(p.travelerType || "");
+      const isFamily = typeRaw.toLowerCase() === "family";
+      const members = parseMembers(p.coPassengers);
+      const familyCount = Number(p.familyCount || members.length || 0);
+      const typeLabel = isFamily && familyCount > 0
+        ? `FAMILY (${familyCount})`
+        : safe(p.travelerType);
+
+      rows.push([
+        rowSerial++,
+        safe(p.travelerName),
+        typeLabel,
+        safe(p.phoneNumber)
+      ]);
+
+      if (isFamily) {
+        members.forEach((member) => {
+          rows.push([
+            rowSerial++,
+            member,
+            "MEMBER",
+            ""
+          ]);
+        });
+      }
+    });
+
     return {
-      headers: ["S.No", "Name", "Phone", "Payment Status"],
-      rows: passengers.map((p) => [p.serial, p.travelerName, p.phoneNumber, p.paymentStatus])
+      headers: ["No.", "Name", "Type", "Phone number"],
+      rows
     };
   }
   if (type === "KASHF") {
+    const parseMemberString = (rawValue) => {
+      const raw = String(rawValue || "").trim();
+      if (!raw) return { name: "", iqama: "" };
+
+      const parenMatch = raw.match(/^(.*)\(([^)]+)\)\s*$/);
+      if (parenMatch) {
+        return { name: parenMatch[1].trim(), iqama: parenMatch[2].trim() };
+      }
+
+      const sepMatch = raw.match(/^(.*?)[\-|/]\s*([A-Za-z0-9]+)\s*$/);
+      if (sepMatch && sepMatch[2].length >= 4) {
+        return { name: sepMatch[1].trim(), iqama: sepMatch[2].trim() };
+      }
+
+      return { name: raw, iqama: "" };
+    };
+
+    const normalizeMember = (item) => {
+      if (typeof item === "string") return parseMemberString(item);
+      if (item && typeof item === "object") {
+        const name = String(item.name || "").trim();
+        const iqama = String(item.iqamaNumber || item.passportOrIqama || item.iqama || "").trim();
+        return { name, iqama };
+      }
+      return { name: "", iqama: "" };
+    };
+
+    const parseMembers = (value) => {
+      if (!value) return [];
+      if (Array.isArray(value)) return value.map(normalizeMember).filter((m) => m.name);
+
+      const raw = String(value).trim();
+      if (!raw) return [];
+      if (raw.startsWith("[") && raw.endsWith("]")) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            return parsed.map(normalizeMember).filter((m) => m.name);
+          }
+        } catch {
+          return [];
+        }
+      }
+      return raw
+        .split(",")
+        .map((item) => normalizeMember(item))
+        .filter((m) => m.name);
+    };
+
+    const sortedByFamily = [...passengers].sort((a, b) => {
+      const aType = String(a.travelerType || "").toLowerCase();
+      const bType = String(b.travelerType || "").toLowerCase();
+      const typeOrder = (type) => (type === "family" ? 0 : type === "bachelor" ? 1 : 2);
+      const typeDiff = typeOrder(aType) - typeOrder(bType);
+      if (typeDiff !== 0) return typeDiff;
+      const aCount = Number(a.familyCount || 0);
+      const bCount = Number(b.familyCount || 0);
+      if (bType === "family" || aType === "family") {
+        if (bCount !== aCount) return bCount - aCount;
+      }
+      return (a.serial ?? 0) - (b.serial ?? 0);
+    });
+
+    const rows = [];
+    let rowSerial = 1;
+    sortedByFamily.forEach((p) => {
+      const typeRaw = String(p.travelerType || "");
+      const isFamily = typeRaw.toLowerCase() === "family";
+      const members = parseMembers(p.coPassengers);
+
+      rows.push([
+        rowSerial++,
+        safe(p.travelerName),
+        "Indian",
+        safe(p.passportOrIqama)
+      ]);
+
+      if (isFamily) {
+        members.forEach((member) => {
+          rows.push([
+            rowSerial++,
+            safe(member.name),
+            "Indian",
+            safe(member.iqama)
+          ]);
+        });
+      }
+    });
+
     return {
-      headers: ["S.No", "Name", "Passport/Iqama", "Payment Status"],
-      rows: passengers.map((p) => [p.serial, p.travelerName, p.passportOrIqama, p.paymentStatus])
+      headers: ["No.", "Name", "Nationality", "Iqama number"],
+      rows
     };
   }
   return {
     headers: ["S.No", "Name", "Passport/Iqama", "Phone", "Payment Status"],
-    rows: passengers.map((p) => [p.serial, p.travelerName, p.passportOrIqama, p.phoneNumber, p.paymentStatus])
+    rows: sorted.map((p, idx) => [
+      safe(p.serial ?? idx + 1),
+      safe(p.travelerName),
+      safe(p.passportOrIqama),
+      safe(p.phoneNumber),
+      safe(p.paymentStatus)
+    ])
   };
 }
 
@@ -61,8 +233,6 @@ export default function Reports() {
   const [type, setType] = useState("LIST");
   const [passengers, setPassengers] = useState([]);
   const [tripMeta, setTripMeta] = useState(null);
-  const [financial, setFinancial] = useState(null);
-  const [year, setYear] = useState(new Date().getFullYear());
   const [unpaidFilters, setUnpaidFilters] = useState({
     tripId: "",
     dateFrom: "",
@@ -83,14 +253,7 @@ export default function Reports() {
     loadTrips();
   }, []);
 
-  useEffect(() => {
-    const loadFinancial = async () => {
-      const data = await apiFetch(`/reports/financial?year=${year}`);
-      setFinancial(data);
-    };
-    loadFinancial();
-  }, [year]);
-
+  
   const handleGenerate = async () => {
     if (!tripId) return;
     const data = await apiFetch(`/reports/trip/${tripId}`);
@@ -112,12 +275,24 @@ export default function Reports() {
   const report = useMemo(() => buildReport(type, passengers), [type, passengers]);
   const reportTitle = type === "BUSLIST" ? "BUS LIST" : type;
 
+  const safeText = (value) => (value === null || value === undefined || value === "" ? "-" : value);
+  const personLine = (label, name, iqama) => `${label}: ${safeText(name)} | Iqama: ${safeText(iqama)}`;
+  const showBusMeta = type === "BUSLIST" || type === "KASHF";
   const reportMeta = tripMeta
-    ? [
-        `Trip Date: ${formatDate(tripMeta.tripDate)}`,
-        `Route: ${tripMeta.route || "-"}`,
-        `Driver/Ameer Name: ${tripMeta.driverName || "-"} / ${tripMeta.ameerName || "-"}`
-      ]
+    ? showBusMeta
+      ? [
+          `Bus Number: ${safeText(tripMeta.busNumber)}`,
+          `Travel Date: ${formatDate(tripMeta.tripDate)}`,
+          `Route: ${safeText(tripMeta.route)}`,
+          personLine("Driver", tripMeta.driverName, tripMeta.driverIqama),
+          personLine("Co-driver", tripMeta.coDriverName, tripMeta.coDriverIqama),
+          personLine("Ameer", tripMeta.ameerName, tripMeta.ameerIqama)
+        ]
+      : [
+          `Trip Date: ${formatDate(tripMeta.tripDate)}`,
+          `Route: ${safeText(tripMeta.route)}`,
+          `Driver/Ameer Name: ${safeText(tripMeta.driverName)} / ${safeText(tripMeta.ameerName)}`
+        ]
     : [];
 
   const handleExportPdf = () => {
@@ -140,26 +315,6 @@ export default function Reports() {
     });
   };
 
-  const exportFinancial = () => {
-    if (!financial) return;
-    const headers = ["DESCRIPTION", "AMOUNT"];
-    const rows = [
-      ["Income", ""],
-      ["Total Revenue", financial.totalRevenue],
-      ["Expenses", ""],
-      ["Total Expenses", financial.totalExpenses],
-      ["Net Profit", financial.netProfit]
-    ];
-    exportToExcel(`Profit-Loss-${financial.year}.xlsx`, headers, rows, {
-      headerTitle: "WADINOOR DAILY UMRAH SERVICE",
-      title: "PROFIT AND LOSS A/C",
-      meta: [`Period: 01 Jan ${financial.year} - 31 Dec ${financial.year}`],
-      alignments: ["left", "right"],
-      columnWidths: [{ wch: 32 }, { wch: 18 }],
-      boldRows: [0, 2, 4],
-      generatedAt: new Date()
-    });
-  };
 
   return (
     <div className="space-y-6">
@@ -207,9 +362,20 @@ export default function Reports() {
           </div>
 
           {tripMeta ? (
-            <div className="mt-3 text-xs text-sand-600">
-              Trip Date: {formatDate(tripMeta.tripDate)} | Route: {tripMeta.route || "-"} | Driver/Ameer: {tripMeta.driverName || "-"} / {tripMeta.ameerName || "-"}
-            </div>
+            showBusMeta ? (
+              <div className="mt-3 space-y-1 text-xs text-sand-600">
+                <div>Bus Number: {safeText(tripMeta.busNumber)}</div>
+                <div>Travel Date: {formatDate(tripMeta.tripDate)}</div>
+                <div>Route: {safeText(tripMeta.route)}</div>
+                <div>Driver: {safeText(tripMeta.driverName)} | Iqama: {safeText(tripMeta.driverIqama)}</div>
+                <div>Co-driver: {safeText(tripMeta.coDriverName)} | Iqama: {safeText(tripMeta.coDriverIqama)}</div>
+                <div>Ameer: {safeText(tripMeta.ameerName)} | Iqama: {safeText(tripMeta.ameerIqama)}</div>
+              </div>
+            ) : (
+              <div className="mt-3 text-xs text-sand-600">
+                Trip Date: {formatDate(tripMeta.tripDate)} | Route: {safeText(tripMeta.route)} | Driver/Ameer: {safeText(tripMeta.driverName)} / {safeText(tripMeta.ameerName)}
+              </div>
+            )
           ) : null}
 
           <div className="mt-4">
@@ -234,144 +400,6 @@ export default function Reports() {
           </div>
         </CardContent>
       </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Unpaid Travelers</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-4">
-            <div>
-              <label className="text-xs font-semibold text-sand-600">Trip</label>
-              <Select value={unpaidFilters.tripId} onChange={(e) => setUnpaidFilters({ ...unpaidFilters, tripId: e.target.value })}>
-                <option value="">All trips</option>
-                {trips.map((trip) => (
-                  <option key={trip.id} value={trip.id}>
-                    {trip.package?.packageName}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-sand-600">Date From</label>
-              <Input type="date" value={unpaidFilters.dateFrom} onChange={(e) => setUnpaidFilters({ ...unpaidFilters, dateFrom: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-sand-600">Date To</label>
-              <Input type="date" value={unpaidFilters.dateTo} onChange={(e) => setUnpaidFilters({ ...unpaidFilters, dateTo: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-sand-600">Service Provider</label>
-              <Select
-                value={unpaidFilters.serviceProviderId}
-                onChange={(e) => setUnpaidFilters({ ...unpaidFilters, serviceProviderId: e.target.value })}
-              >
-                <option value="">All providers</option>
-                {providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.providerName}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-          <div className="mt-4 flex items-center gap-2">
-            <Button onClick={handleUnpaid}>Run Report</Button>
-            <span className="text-sm text-red-600">Total Unpaid: {formatCurrency(unpaidReport.totalUnpaid)}</span>
-          </div>
-
-          <div className="mt-4">
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableHeaderCell>Name</TableHeaderCell>
-                  <TableHeaderCell>Passport/Iqama</TableHeaderCell>
-                  <TableHeaderCell>Phone</TableHeaderCell>
-                  <TableHeaderCell>Trip</TableHeaderCell>
-                  <TableHeaderCell>Provider</TableHeaderCell>
-                  <TableHeaderCell>Paid</TableHeaderCell>
-                  <TableHeaderCell>Final</TableHeaderCell>
-                  <TableHeaderCell>Unpaid</TableHeaderCell>
-                </TableRow>
-              </TableHead>
-              <tbody>
-                {unpaidReport.travelers.map((traveler) => (
-                  <TableRow key={traveler.id}>
-                    <TableCell>{traveler.travelerName}</TableCell>
-                    <TableCell>{traveler.passportOrIqama}</TableCell>
-                    <TableCell>{traveler.phoneNumber || "-"}</TableCell>
-                    <TableCell>{traveler.trip?.package?.packageName}</TableCell>
-                    <TableCell>{traveler.serviceProvider?.providerName}</TableCell>
-                    <TableCell>{formatCurrency(traveler.amountPaid)}</TableCell>
-                    <TableCell>{formatCurrency(traveler.finalAmount)}</TableCell>
-                    <TableCell>{formatCurrency(traveler.unpaidAmount)}</TableCell>
-                  </TableRow>
-                ))}
-              </tbody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Financial Reports</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <label className="text-xs font-semibold text-sand-600">Year</label>
-              <Select value={year} onChange={(e) => setYear(Number(e.target.value))}>
-                {[year - 1, year, year + 1].map((y) => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </Select>
-            </div>
-            <Button variant="outline" onClick={exportFinancial} disabled={!financial}>
-              Export Excel
-            </Button>
-          </div>
-          {financial ? (
-            <div className="mt-4 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="rounded-xl border border-sand-200 bg-white/80 p-4">
-                  <p className="text-xs text-sand-600">Total Revenue</p>
-                  <p className="text-xl font-semibold">{formatCurrency(financial.totalRevenue)}</p>
-                </div>
-                <div className="rounded-xl border border-sand-200 bg-white/80 p-4">
-                  <p className="text-xs text-sand-600">Total Expenses</p>
-                  <p className="text-xl font-semibold">{formatCurrency(financial.totalExpenses)}</p>
-                </div>
-                <div className="rounded-xl border border-sand-200 bg-white/80 p-4">
-                  <p className="text-xs text-sand-600">Net Profit</p>
-                  <p className="text-xl font-semibold">{formatCurrency(financial.netProfit)}</p>
-                </div>
-              </div>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableHeaderCell>Month</TableHeaderCell>
-                    <TableHeaderCell>Revenue</TableHeaderCell>
-                    <TableHeaderCell>Expenses</TableHeaderCell>
-                    <TableHeaderCell>Profit</TableHeaderCell>
-                  </TableRow>
-                </TableHead>
-                <tbody>
-                  {financial.monthly.map((row) => (
-                    <TableRow key={row.month}>
-                      <TableCell>{row.month}</TableCell>
-                      <TableCell>{formatCurrency(row.revenue)}</TableCell>
-                      <TableCell>{formatCurrency(row.expenses)}</TableCell>
-                      <TableCell>{formatCurrency(row.profit)}</TableCell>
-                    </TableRow>
-                  ))}
-                </tbody>
-              </Table>
-            </div>
-          ) : null}
-        </CardContent>
-      </Card>
     </div>
   );
 }
-

@@ -28,6 +28,11 @@ function unpaidAmount(traveler) {
 }
 
 const activeFilter = { OR: [{ status: "ACTIVE" }] };
+const INTERNAL_PROVIDER = "wadinoor";
+
+function normalizeProviderName(value) {
+  return String(value || "").toLowerCase().replace(/\s+/g, "");
+}
 
 router.get("/summary", authenticate, async (req, res) => {
   if (!hasPermission(req.user, "can_view_reports")) {
@@ -129,7 +134,7 @@ router.get("/trip/:tripId", authenticate, async (req, res) => {
 
   const trip = await prisma.trip.findUnique({
     where: { id: tripId },
-    include: { package: true, driver: true, ameer: true }
+    include: { package: true, driver: true, coDriver: true, ameer: true, bus: true }
   });
 
   const travelers = await prisma.traveler.findMany({
@@ -142,16 +147,25 @@ router.get("/trip/:tripId", authenticate, async (req, res) => {
     travelerName: traveler.travelerName,
     passportOrIqama: traveler.passportOrIqama,
     phoneNumber: traveler.phoneNumber,
+    travelerType: traveler.travelerType,
+    familyCount: traveler.familyCount,
+    coPassengers: traveler.coPassengers,
     paymentStatus: traveler.paymentStatus
   }));
 
   return res.json({
     tripId,
     tripMeta: {
+      busNumber: trip?.bus?.busNumber,
+      busName: trip?.bus?.busName,
       tripDate: trip?.tripDate,
       route: trip?.package?.route,
       driverName: trip?.driver?.driverName,
-      ameerName: trip?.ameer?.name
+      driverIqama: trip?.driver?.passportNumber,
+      coDriverName: trip?.coDriver?.driverName,
+      coDriverIqama: trip?.coDriver?.passportNumber,
+      ameerName: trip?.ameer?.name,
+      ameerIqama: trip?.ameer?.passportNumber
     },
     passengers: formatted
   });
@@ -174,32 +188,57 @@ router.get("/financial", authenticate, async (req, res) => {
       ...activeFilter,
       ...(ameerId ? { trip: { ameerId } } : {})
     },
-    select: { createdAt: true, amountPaid: true }
+    select: {
+      createdAt: true,
+      amountPaid: true,
+      serviceProvider: { select: { providerName: true } }
+    }
   });
   const expenses = await prisma.expense.findMany({
-    select: { date: true, amount: true }
+    select: { date: true, amount: true, category: true }
   });
 
   const revenueMap = new Map();
+  const internalRevenueMap = new Map();
+  const externalRevenueMap = new Map();
   for (const traveler of travelers) {
     const key = monthKey(traveler.createdAt);
-    revenueMap.set(key, (revenueMap.get(key) || 0) + traveler.amountPaid);
+    const amount = Number(traveler.amountPaid || 0);
+    revenueMap.set(key, (revenueMap.get(key) || 0) + amount);
+    const providerName = normalizeProviderName(traveler.serviceProvider?.providerName);
+    const isInternal = !providerName || providerName === INTERNAL_PROVIDER;
+    const targetMap = isInternal ? internalRevenueMap : externalRevenueMap;
+    targetMap.set(key, (targetMap.get(key) || 0) + amount);
   }
 
   const expenseMap = new Map();
+  const expenseCategoryMap = new Map();
   for (const expense of expenses) {
     const key = monthKey(expense.date);
-    expenseMap.set(key, (expenseMap.get(key) || 0) + expense.amount);
+    const amount = Number(expense.amount || 0);
+    expenseMap.set(key, (expenseMap.get(key) || 0) + amount);
+    const category = expense.category || "OTHER";
+    if (!expenseCategoryMap.has(key)) {
+      expenseCategoryMap.set(key, {});
+    }
+    const bucket = expenseCategoryMap.get(key);
+    bucket[category] = (bucket[category] || 0) + amount;
   }
 
   const monthly = months.map((month) => {
     const revenue = revenueMap.get(month.key) || 0;
     const exp = expenseMap.get(month.key) || 0;
+    const internalRevenue = internalRevenueMap.get(month.key) || 0;
+    const externalRevenue = externalRevenueMap.get(month.key) || 0;
+    const expenseByCategory = expenseCategoryMap.get(month.key) || {};
     return {
       month: month.label,
       revenue,
       expenses: exp,
-      profit: revenue - exp
+      profit: revenue - exp,
+      internalRevenue,
+      externalRevenue,
+      expenseByCategory
     };
   });
 

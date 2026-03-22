@@ -17,6 +17,7 @@ const categories = [
   { label: "Room Expense", value: "ROOM" },
   { label: "Jadwal Expense", value: "Jadwal" },
   { label: "Ameer Expense", value: "Ameer" },
+  { label: "Administrative Expenses", value: "Administrative" },
   { label: "Other Expense", value: "OTHER" }
 ];
 
