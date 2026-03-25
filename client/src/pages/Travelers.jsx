@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.jsx";
@@ -77,6 +77,7 @@ export default function Travelers() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkStatus, setBulkStatus] = useState("CANCELLED");
+  const travelerNameRef = useRef(null);
   const [form, setForm] = useState({
     travelerName: "",
     passportOrIqama: "",
@@ -173,6 +174,7 @@ export default function Travelers() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+    const wasEditing = Boolean(editingId);
 
     if (!form.tripId) {
       toast({ title: "Trip selection is required.", variant: "error" });
@@ -218,6 +220,9 @@ export default function Travelers() {
       setEditingId(null);
       toast({ title: editingId ? "Traveler updated successfully." : "Traveler added successfully.", variant: "success" });
       await loadData();
+      if (!wasEditing) {
+        requestAnimationFrame(() => travelerNameRef.current?.focus());
+      }
     } catch (err) {
       toast({ title: err.message, variant: "error" });
     }
@@ -402,6 +407,7 @@ export default function Travelers() {
             <div>
               <label className="text-xs font-semibold text-sand-600">Traveler Name</label>
               <Input
+                ref={travelerNameRef}
                 value={form.travelerName}
                 onChange={(e) => setForm({ ...form, travelerName: e.target.value })}
               />
