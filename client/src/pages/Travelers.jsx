@@ -70,6 +70,8 @@ export default function Travelers() {
   const [providers, setProviders] = useState([]);
   const [travelers, setTravelers] = useState([]);
   const [search, setSearch] = useState("");
+  const [tripFilter, setTripFilter] = useState("");
+  const [dateFilters, setDateFilters] = useState({ from: "", to: "" });
   const [page, setPage] = useState(1);
   const [sortKey, setSortKey] = useState("family");
   const [sortDir, setSortDir] = useState("asc");
@@ -131,11 +133,34 @@ export default function Travelers() {
   }, [travelers, page]);
 
   const filtered = useMemo(() => {
+    const searchValue = search.toLowerCase();
+    const dateFrom = dateFilters.from ? new Date(dateFilters.from) : null;
+    const dateTo = dateFilters.to ? new Date(dateFilters.to) : null;
+    if (dateTo) {
+      dateTo.setHours(23, 59, 59, 999);
+    }
     return travelers.filter((traveler) => {
-      const text = `${traveler.travelerName} ${traveler.passportOrIqama} ${traveler.phoneNumber}`.toLowerCase();
-      return text.includes(search.toLowerCase());
+      const text = `${traveler.travelerName} ${traveler.passportOrIqama} ${traveler.phoneNumber || ""}`.toLowerCase();
+      if (searchValue && !text.includes(searchValue)) return false;
+      if (tripFilter && String(traveler.tripId) !== String(tripFilter)) return false;
+      if (dateFrom || dateTo) {
+        const createdAt = traveler.createdAt ? new Date(traveler.createdAt) : null;
+        if (!createdAt || Number.isNaN(createdAt.getTime())) return false;
+        if (dateFrom && createdAt < dateFrom) return false;
+        if (dateTo && createdAt > dateTo) return false;
+      }
+      return true;
     });
-  }, [travelers, search]);
+  }, [travelers, search, tripFilter, dateFilters]);
+
+  const displayCount = useMemo(() => (
+    filtered.reduce((sum, traveler) => {
+      if (traveler.travelerType === "FAMILY") {
+        return sum + Number(traveler.familyCount || 1);
+      }
+      return sum + 1;
+    }, 0)
+  ), [filtered]);
 
   const sorted = useMemo(() => {
     const items = [...filtered];
@@ -520,13 +545,43 @@ export default function Travelers() {
         </CardHeader>
         <CardContent>
           <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Input
-              className="sm:max-w-xs"
-              placeholder="Search travelers"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <p className="text-xs text-sand-600">Showing {filtered.length} travelers</p>
+            <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex-1">
+                <Input
+                  placeholder="Search travelers"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <div className="w-full sm:w-56">
+                <label className="text-xs font-semibold text-sand-600">Trip</label>
+                <Select value={tripFilter} onChange={(e) => setTripFilter(e.target.value)}>
+                  <option value="">All trips</option>
+                  {trips.map((trip) => (
+                    <option key={trip.id} value={trip.id}>
+                      {trip.package?.packageName} ({formatDate(trip.tripDate)})
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div className="w-full sm:w-40">
+                <label className="text-xs font-semibold text-sand-600">Date From</label>
+                <Input
+                  type="date"
+                  value={dateFilters.from}
+                  onChange={(e) => setDateFilters((prev) => ({ ...prev, from: e.target.value }))}
+                />
+              </div>
+              <div className="w-full sm:w-40">
+                <label className="text-xs font-semibold text-sand-600">Date To</label>
+                <Input
+                  type="date"
+                  value={dateFilters.to}
+                  onChange={(e) => setDateFilters((prev) => ({ ...prev, to: e.target.value }))}
+                />
+              </div>
+            </div>
+            <p className="text-xs text-sand-600">Showing {displayCount} travelers</p>
           </div>
 
           {selectedIds.length ? (

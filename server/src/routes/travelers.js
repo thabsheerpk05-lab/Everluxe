@@ -144,10 +144,13 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
 
   const nextStatus = status || "ACTIVE";
   if (nextStatus !== "CANCELLED") {
-    const activeCount = await prisma.traveler.count({
-      where: { tripId: Number(tripId), status: "ACTIVE" }
+    const activeAgg = await prisma.traveler.aggregate({
+      where: { tripId: Number(tripId), status: "ACTIVE" },
+      _sum: { familyCount: true }
     });
-    if (activeCount >= 50) {
+    const activeCount = activeAgg._sum.familyCount || 0;
+    const incomingCount = Number(familyCount || 1);
+    if (activeCount + incomingCount > 50) {
       return res.status(400).json({ message: "Trip already has 50 active travelers" });
     }
   }

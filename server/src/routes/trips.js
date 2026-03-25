@@ -28,7 +28,23 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
     }
   });
 
-  return res.json(trips);
+  if (!trips.length) {
+    return res.json(trips);
+  }
+
+  const tripIds = trips.map((trip) => trip.id);
+  const counts = await prisma.traveler.groupBy({
+    by: ["tripId"],
+    where: { tripId: { in: tripIds } },
+    _sum: { familyCount: true }
+  });
+  const countMap = new Map(counts.map((row) => [row.tripId, row._sum.familyCount || 0]));
+  const withCounts = trips.map((trip) => ({
+    ...trip,
+    travelerCount: countMap.get(trip.id) || 0
+  }));
+
+  return res.json(withCounts);
 }));
 
 router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {

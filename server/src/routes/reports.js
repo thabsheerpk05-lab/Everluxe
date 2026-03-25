@@ -43,10 +43,14 @@ router.get("/summary", authenticate, asyncHandler(async (req, res) => {
   const ameerId = getAmeerContext(req.user);
   const tripWhere = ameerId ? { ameerId } : {};
 
-  const [tripCount, travelerCount] = await Promise.all([
+  const [tripCount, travelerAgg] = await Promise.all([
     prisma.trip.count({ where: tripWhere }),
-    prisma.traveler.count(ameerId ? { where: { trip: { ameerId } } } : undefined)
+    prisma.traveler.aggregate({
+      where: ameerId ? { trip: { ameerId } } : {},
+      _sum: { familyCount: true }
+    })
   ]);
+  const travelerCount = travelerAgg._sum.familyCount || 0;
 
   const revenueAgg = await prisma.traveler.aggregate({
   where: {

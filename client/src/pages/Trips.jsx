@@ -18,7 +18,7 @@ const sorters = {
   tripDate: (a, b) => new Date(a.tripDate) - new Date(b.tripDate),
   package: (a, b) => a.package?.packageName.localeCompare(b.package?.packageName || ""),
   route: (a, b) => a.package?.route.localeCompare(b.package?.route || ""),
-  travelers: (a, b) => (a._count?.travelers || 0) - (b._count?.travelers || 0)
+  travelers: (a, b) => (a.travelerCount ?? a._count?.travelers || 0) - (b.travelerCount ?? b._count?.travelers || 0)
 };
 
 const toDateKey = (value) => {
@@ -585,7 +585,7 @@ export default function Trips() {
                   <TableCell>{trip.bus ? `${trip.bus.busName} (${trip.bus.busNumber})` : "-"}</TableCell>
                   <TableCell>{trip.ameer?.name || "-"}</TableCell>
                   <TableCell>{statusLabels[trip.status] || trip.status || "-"}</TableCell>
-                  <TableCell>{trip._count?.travelers ?? 0}</TableCell>
+                  <TableCell>{trip.travelerCount ?? trip._count?.travelers ?? 0}</TableCell>
                   {user?.role === "ADMIN" ? (
                     <TableCell>{formatCurrency(collectionTotals.get(trip.id) || 0)}</TableCell>
                   ) : null}
