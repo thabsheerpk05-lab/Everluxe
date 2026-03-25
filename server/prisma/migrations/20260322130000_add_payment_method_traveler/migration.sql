@@ -1,1 +1,0 @@
--- No-op: paymentMethod column already exists from earlier migrations.

@@ -12,11 +12,17 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
 
 router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const { driverName, phoneNumber, passportNumber } = req.body || {};
-  if (!driverName || !phoneNumber) {
-    return res.status(400).json({ message: "Driver name and phone number are required" });
+  if (!driverName) {
+    return res.status(400).json({ message: "Driver name is required" });
   }
 
-  const created = await prisma.driver.create({ data: { driverName, phoneNumber, passportNumber: passportNumber || null } });
+  const created = await prisma.driver.create({
+    data: {
+      driverName,
+      phoneNumber: phoneNumber ? String(phoneNumber).trim() : null,
+      passportNumber: passportNumber || null
+    }
+  });
   return res.status(201).json(created);
 }));
 
@@ -25,7 +31,11 @@ router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => 
   const { driverName, phoneNumber, passportNumber } = req.body || {};
   const updated = await prisma.driver.update({
     where: { id },
-    data: { driverName, phoneNumber, passportNumber: passportNumber || null }
+    data: {
+      driverName,
+      phoneNumber: phoneNumber !== undefined ? (phoneNumber ? String(phoneNumber).trim() : null) : undefined,
+      passportNumber: passportNumber || null
+    }
   });
   return res.json(updated);
 }));

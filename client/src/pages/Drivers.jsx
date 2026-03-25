@@ -12,7 +12,7 @@ import { useConfirm } from "../hooks/useConfirm.jsx";
 
 const sorters = {
   name: (a, b) => a.driverName.localeCompare(b.driverName),
-  phone: (a, b) => a.phoneNumber.localeCompare(b.phoneNumber)
+  phone: (a, b) => (a.phoneNumber || "").localeCompare(b.phoneNumber || "")
 };
 
 export default function Drivers() {
@@ -81,7 +81,7 @@ export default function Drivers() {
 
   const handleEdit = (driver) => {
     setEditingId(driver.id);
-    setForm({ driverName: driver.driverName, phoneNumber: driver.phoneNumber, passportNumber: driver.passportNumber || "" });
+    setForm({ driverName: driver.driverName, phoneNumber: driver.phoneNumber || "", passportNumber: driver.passportNumber || "" });
     setIsFormOpen(true);
   };
 
@@ -147,7 +147,7 @@ export default function Drivers() {
               <Input value={form.driverName} onChange={(e) => setForm({ ...form, driverName: e.target.value })} />
             </div>
             <div>
-              <label className="text-xs font-semibold text-sand-600">Phone Number</label>
+              <label className="text-xs font-semibold text-sand-600">Phone Number (optional)</label>
               <Input value={form.phoneNumber} onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })} />
             </div>
             <div>
@@ -180,7 +180,7 @@ export default function Drivers() {
               {paged.map((driver) => (
                 <TableRow key={driver.id}>
                   <TableCell>{driver.driverName}</TableCell>
-                  <TableCell>{driver.phoneNumber}</TableCell>
+                  <TableCell>{driver.phoneNumber || "-"}</TableCell>
                   <TableCell>{driver.passportNumber || "-"}</TableCell>
                   <TableCell className="max-w-none">
                     <div className="flex gap-2">

@@ -24,8 +24,8 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
 
 router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const { name, phone, notes, passportNumber, email, password } = req.body || {};
-  if (!name || !phone) {
-    return res.status(400).json({ message: "Ameer name and phone are required" });
+  if (!name) {
+    return res.status(400).json({ message: "Ameer name is required" });
   }
   const providedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
   if (providedEmail) {
@@ -37,10 +37,10 @@ router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
 
   const created = await prisma.$transaction(async (tx) => {
     const ameer = await tx.ameer.create({
-      data: { name, phone, notes: notes || null, passportNumber: passportNumber || null }
+      data: { name, phone: phone ? String(phone).trim() : null, notes: notes || null, passportNumber: passportNumber || null }
     });
 
-    const digits = String(phone).replace(/\D/g, "");
+    const digits = phone ? String(phone).replace(/\D/g, "") : "";
     let userEmail = providedEmail;
     if (!userEmail) {
       const base = digits ? `ameer${digits}` : `ameer${ameer.id}`;
@@ -78,7 +78,12 @@ router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => 
   const { name, phone, notes, passportNumber, email, password } = req.body || {};
   const updated = await prisma.ameer.update({
     where: { id },
-    data: { name, phone, notes: notes || null, passportNumber: passportNumber || null }
+    data: {
+      name,
+      phone: phone !== undefined ? (phone ? String(phone).trim() : null) : undefined,
+      notes: notes || null,
+      passportNumber: passportNumber || null
+    }
   });
   return res.json(updated);
 }));

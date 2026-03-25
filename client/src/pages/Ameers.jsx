@@ -13,7 +13,7 @@ import { useConfirm } from "../hooks/useConfirm.jsx";
 
 const sorters = {
   name: (a, b) => a.name.localeCompare(b.name),
-  phone: (a, b) => a.phone.localeCompare(b.phone)
+  phone: (a, b) => (a.phone || "").localeCompare(b.phone || "")
 };
 
 export default function Ameers() {
@@ -82,7 +82,7 @@ export default function Ameers() {
 
   const handleEdit = (ameer) => {
     setEditingId(ameer.id);
-    setForm({ name: ameer.name, phone: ameer.phone, passportNumber: ameer.passportNumber || "", notes: ameer.notes || "" });
+    setForm({ name: ameer.name, phone: ameer.phone || "", passportNumber: ameer.passportNumber || "", notes: ameer.notes || "" });
     setIsFormOpen(true);
   };
 
@@ -148,7 +148,7 @@ export default function Ameers() {
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
-              <label className="text-xs font-semibold text-sand-600">Phone</label>
+              <label className="text-xs font-semibold text-sand-600">Phone (optional)</label>
               <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div>
@@ -186,7 +186,7 @@ export default function Ameers() {
               {paged.map((ameer) => (
                 <TableRow key={ameer.id}>
                   <TableCell>{ameer.name}</TableCell>
-                  <TableCell>{ameer.phone}</TableCell>
+                  <TableCell>{ameer.phone || "-"}</TableCell>
                   <TableCell>{ameer.passportNumber || "-"}</TableCell>
                   <TableCell>{ameer.notes || "-"}</TableCell>
                   <TableCell className="max-w-none">

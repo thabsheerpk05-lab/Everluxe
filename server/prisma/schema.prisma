@@ -38,7 +38,7 @@ model Package {
 model Driver {
   id            Int    @id @default(autoincrement())
   driverName    String
-  phoneNumber   String
+  phoneNumber   String?
   passportNumber String?
   trips         Trip[] @relation("TripDriver")
   coTrips       Trip[] @relation("TripCoDriver")
@@ -55,7 +55,7 @@ model Bus {
 model Ameer {
   id            Int    @id @default(autoincrement())
   name          String
-  phone         String
+  phone         String?
   passportNumber String?
   notes         String?
 
@@ -148,7 +148,6 @@ model TripCollection {
   ameer              Ameer    @relation(fields: [ameerId], references: [id])
   receivedByAdmin    User     @relation("CollectionReceivedBy", fields: [receivedByAdminId], references: [id])
 }
-
 
 
 

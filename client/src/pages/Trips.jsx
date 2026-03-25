@@ -385,7 +385,7 @@ export default function Trips() {
                 <option value="">Select driver</option>
                 {drivers.map((driver) => (
                   <option key={driver.id} value={driver.id}>
-                    {driver.driverName} ({driver.phoneNumber})
+                    {driver.driverName} ({driver.phoneNumber || "-"})
                   </option>
                 ))}
               </Select>
@@ -396,7 +396,7 @@ export default function Trips() {
                 <option value="">Select co-driver</option>
                 {drivers.map((driver) => (
                   <option key={driver.id} value={driver.id}>
-                    {driver.driverName} ({driver.phoneNumber})
+                    {driver.driverName} ({driver.phoneNumber || "-"})
                   </option>
                 ))}
               </Select>
@@ -407,7 +407,7 @@ export default function Trips() {
                 <option value="">Select ameer</option>
                 {ameers.map((ameer) => (
                   <option key={ameer.id} value={ameer.id}>
-                    {ameer.name} ({ameer.phone})
+                    {ameer.name} ({ameer.phone || "-"})
                   </option>
                 ))}
               </Select>
