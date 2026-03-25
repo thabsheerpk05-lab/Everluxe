@@ -117,8 +117,18 @@ model Traveler {
   createdAt         DateTime @default(now())
 
   trip             Trip     @relation(fields: [tripId], references: [id])
+  familyMembers    FamilyMember[]
   serviceProvider  ServiceProvider? @relation(fields: [serviceProviderId], references: [id])
   createdBy        User?    @relation("TravelerCreatedBy", fields: [createdById], references: [id])
+}
+
+model FamilyMember {
+  id         Int      @id @default(autoincrement())
+  travelerId Int
+  name       String
+  createdAt  DateTime @default(now())
+
+  traveler   Traveler @relation(fields: [travelerId], references: [id], onDelete: Cascade)
 }
 
 model Expense {
@@ -148,7 +158,6 @@ model TripCollection {
   ameer              Ameer    @relation(fields: [ameerId], references: [id])
   receivedByAdmin    User     @relation("CollectionReceivedBy", fields: [receivedByAdminId], references: [id])
 }
-
 
 
 

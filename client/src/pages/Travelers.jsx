@@ -16,34 +16,39 @@ import { parsePermissions } from "../utils/permissions.js";
 
 const travelerStatuses = ["ACTIVE", "CANCELLED"];
 
-const sorters = {
-  name: (a, b) => a.travelerName.localeCompare(b.travelerName),
-  passport: (a, b) => a.passportOrIqama.localeCompare(b.passportOrIqama),
-  amount: (a, b) => a.amountPaid - b.amountPaid,
-  family: (a, b) => {
-    const aFamily = a.travelerType === "FAMILY";
-    const bFamily = b.travelerType === "FAMILY";
-    if (aFamily && !bFamily) return -1;
-    if (!aFamily && bFamily) return 1;
-    if (aFamily && bFamily) {
-      return Number(a.familyCount || 1) - Number(b.familyCount || 1);
+  const sorters = {
+    name: (a, b) => a.travelerName.localeCompare(b.travelerName),
+    passport: (a, b) => a.passportOrIqama.localeCompare(b.passportOrIqama),
+    amount: (a, b) => a.amountPaid - b.amountPaid,
+    family: (a, b) => {
+      const aFamily = a.travelerType === "FAMILY";
+      const bFamily = b.travelerType === "FAMILY";
+      if (aFamily && !bFamily) return -1;
+      if (!aFamily && bFamily) return 1;
+      if (aFamily && bFamily) {
+        return Number(a.familyCount || 1) - Number(b.familyCount || 1);
+      }
+      return a.travelerName.localeCompare(b.travelerName);
     }
-    return a.travelerName.localeCompare(b.travelerName);
-  }
-};
+  };
 const normalizeFamilyMember = (member) => {
   if (!member || typeof member !== "object") return null;
   const id = member.id ? String(member.id) : "";
-  const name = String(member.name || "").trim();
-  const passportOrIqama = String(member.passportOrIqama || member.passport || member.iqama || "").trim();
-  if (!name && !passportOrIqama) return null;
-  return { id, name, passportOrIqama };
+  const name = String(member.name || member.passportOrIqama || member.passport || member.iqama || "").trim();
+  if (!name) return null;
+  return { id, name };
 };
 
 const makeFamilyId = () => `fm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
 const parseFamilyMembers = (value) => {
   if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map(normalizeFamilyMember)
+      .filter(Boolean)
+      .map((member) => ({ ...member, id: member.id || makeFamilyId() }));
+  }
   try {
     const parsed = JSON.parse(value);
     if (Array.isArray(parsed)) {
@@ -59,7 +64,7 @@ const parseFamilyMembers = (value) => {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((passportOrIqama) => ({ id: makeFamilyId(), name: "", passportOrIqama }));
+    .map((name) => ({ id: makeFamilyId(), name }));
 };
 export default function Travelers() {
   const { user } = useAuth();
@@ -97,14 +102,12 @@ export default function Travelers() {
     serviceProviderId: ""
   });
 
-  const loadData = async () => {
-    const [tripData, travelerData, providerData] = await Promise.all([
+  const loadMeta = async () => {
+    const [tripData, providerData] = await Promise.all([
       apiFetch("/trips"),
-      apiFetch("/travelers"),
       apiFetch("/providers")
     ]);
     setTrips(tripData);
-    setTravelers(travelerData);
     setProviders(providerData);
 
     const defaultProvider = providerData.find((p) => p.providerName.toLowerCase() === "wadinoor");
@@ -113,9 +116,27 @@ export default function Travelers() {
     }
   };
 
+  const loadTravelers = async () => {
+    const params = new URLSearchParams();
+    if (tripFilter) params.append("tripId", tripFilter);
+    if (dateFilters.from) params.append("dateFrom", dateFilters.from);
+    if (dateFilters.to) params.append("dateTo", dateFilters.to);
+    if (search) params.append("q", search);
+    try {
+      const travelerData = await apiFetch(`/travelers?${params.toString()}`);
+      setTravelers(travelerData);
+    } catch (err) {
+      toast({ title: err.message, variant: "error" });
+    }
+  };
+
   useEffect(() => {
-    loadData();
+    loadMeta();
   }, []);
+
+  useEffect(() => {
+    loadTravelers();
+  }, [search, tripFilter, dateFilters.from, dateFilters.to]);
 
   useEffect(() => {
     if (form.travelerType !== "FAMILY") {
@@ -132,34 +153,10 @@ export default function Travelers() {
     setSelectedIds([]);
   }, [travelers, page]);
 
-  const filtered = useMemo(() => {
-    const searchValue = search.toLowerCase();
-    const dateFrom = dateFilters.from ? new Date(dateFilters.from) : null;
-    const dateTo = dateFilters.to ? new Date(dateFilters.to) : null;
-    if (dateTo) {
-      dateTo.setHours(23, 59, 59, 999);
-    }
-    return travelers.filter((traveler) => {
-      const text = `${traveler.travelerName} ${traveler.passportOrIqama} ${traveler.phoneNumber || ""}`.toLowerCase();
-      if (searchValue && !text.includes(searchValue)) return false;
-      if (tripFilter && String(traveler.tripId) !== String(tripFilter)) return false;
-      if (dateFrom || dateTo) {
-        const createdAt = traveler.createdAt ? new Date(traveler.createdAt) : null;
-        if (!createdAt || Number.isNaN(createdAt.getTime())) return false;
-        if (dateFrom && createdAt < dateFrom) return false;
-        if (dateTo && createdAt > dateTo) return false;
-      }
-      return true;
-    });
-  }, [travelers, search, tripFilter, dateFilters]);
+  const filtered = useMemo(() => travelers, [travelers]);
 
   const displayCount = useMemo(() => (
-    filtered.reduce((sum, traveler) => {
-      if (traveler.travelerType === "FAMILY") {
-        return sum + Number(traveler.familyCount || 1);
-      }
-      return sum + 1;
-    }, 0)
+    filtered.reduce((sum, traveler) => sum + Number(traveler.familyCount || 1), 0)
   ), [filtered]);
 
   const sorted = useMemo(() => {
@@ -219,13 +216,13 @@ export default function Travelers() {
     const normalizedMembers = form.travelerType === "FAMILY"
       ? (form.familyMembers || []).map(normalizeFamilyMember).filter(Boolean)
       : [];
-    const payloadMembers = normalizedMembers.map(({ name, passportOrIqama }) => ({ name, passportOrIqama }));
+    const payloadMembers = normalizedMembers.map(({ name }) => ({ name }));
     const computedFamilyCount = form.travelerType === "FAMILY" ? 1 + normalizedMembers.length : 1;
     const { familyMembers, ...rest } = form;
     const payload = {
       ...rest,
       familyCount: computedFamilyCount,
-      coPassengers: payloadMembers.length ? JSON.stringify(payloadMembers) : "",
+      familyMembers: payloadMembers,
     };
 
     try {
@@ -244,7 +241,7 @@ export default function Travelers() {
       resetForm(providerToKeep);
       setEditingId(null);
       toast({ title: editingId ? "Traveler updated successfully." : "Traveler added successfully.", variant: "success" });
-      await loadData();
+      await loadTravelers();
       if (!wasEditing) {
         requestAnimationFrame(() => travelerNameRef.current?.focus());
       }
@@ -266,7 +263,7 @@ export default function Travelers() {
       passportOrIqama: traveler.passportOrIqama,
       phoneNumber: traveler.phoneNumber,
       travelerType: traveler.travelerType,
-      familyMembers: parseFamilyMembers(traveler.coPassengers),
+      familyMembers: parseFamilyMembers(traveler.familyMembers || traveler.coPassengers),
       tripId: traveler.tripId,
       amountPaid: traveler.amountPaid,
       paymentMethod: traveler.paymentMethod,
@@ -295,7 +292,7 @@ export default function Travelers() {
     });
     if (!confirmed) return;
     await apiFetch(`/travelers/${traveler.id}`, { method: "DELETE" });
-    await loadData();
+    await loadTravelers();
   };
 
   const handleCancel = async (traveler) => {
@@ -331,7 +328,7 @@ export default function Travelers() {
     if (!confirmed) return;
     await Promise.all(selectedIds.map((id) => apiFetch(`/travelers/${id}`, { method: "DELETE" })));
     setSelectedIds([]);
-    await loadData();
+    await loadTravelers();
   };
 
   const handleBulkStatus = async () => {
@@ -348,7 +345,7 @@ export default function Travelers() {
       body: JSON.stringify({ status: bulkStatus })
     })));
     setSelectedIds([]);
-    await loadData();
+    await loadTravelers();
   };
 
   const toggleSelect = (id) => {
@@ -376,7 +373,7 @@ export default function Travelers() {
   const addFamilyMember = () => {
     setForm((prev) => ({
       ...prev,
-      familyMembers: [...(prev.familyMembers || []), { id: makeFamilyId(), name: "", passportOrIqama: "" }]
+      familyMembers: [...(prev.familyMembers || []), { id: makeFamilyId(), name: "" }]
     }));
   };
 
@@ -466,23 +463,18 @@ export default function Travelers() {
               <>
 
                 <div className="md:col-span-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <label className="text-xs font-semibold text-sand-600">Family Members (Name + Passport/Iqama)</label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="text-xs font-semibold text-sand-600">Family Members (Names)</label>
                     <Button type="button" size="sm" variant="outline" onClick={addFamilyMember}>Add Member</Button>
                   </div>
                   {form.familyMembers.length ? (
                     <div className="mt-2 space-y-2">
                       {form.familyMembers.map((member, index) => (
-                        <div key={member.id || `member-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                        <div key={member.id || `member-${index}`} className="grid gap-2 sm:grid-cols-[1fr_auto]">
                           <Input
                             value={member.name || ""}
                             onChange={(e) => updateFamilyMember(index, "name", e.target.value)}
                             placeholder="Member name"
-                          />
-                          <Input
-                            value={member.passportOrIqama || ""}
-                            onChange={(e) => updateFamilyMember(index, "passportOrIqama", e.target.value)}
-                            placeholder="Passport/Iqama"
                           />
                           <Button type="button" size="sm" variant="outline" onClick={() => removeFamilyMember(index)}>Remove</Button>
                         </div>
@@ -628,7 +620,16 @@ export default function Travelers() {
                       onChange={() => toggleSelect(traveler.id)}
                     />
                   </TableCell>
-                  <TableCell className="sticky left-10 z-10 bg-white border-r border-sand-200" title={traveler.travelerName}>{traveler.travelerName}</TableCell>
+                  <TableCell className="sticky left-10 z-10 bg-white border-r border-sand-200" title={traveler.travelerName}>
+                    <div>{traveler.travelerName}</div>
+                    {traveler.travelerType === "FAMILY" && traveler.familyMembers?.length ? (
+                      <div className="mt-1 space-y-1 text-xs text-sand-500">
+                        {traveler.familyMembers.map((member) => (
+                          <div key={member.id}>{member.name}</div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </TableCell>
                   <TableCell>{traveler.passportOrIqama}</TableCell>
                   <TableCell>{traveler.phoneNumber || "-"}</TableCell>
                   <TableCell>

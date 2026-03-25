@@ -9,6 +9,15 @@ const allowedTravelerTypes = ["FAMILY", "BACHELOR"];
 const allowedStatuses = ["ACTIVE", "CANCELLED"];
 const allowedPaymentStatuses = ["PAID", "PARTIAL", "UNPAID"];
 
+const normalizeFamilyMembers = (members) => {
+  if (!Array.isArray(members)) return [];
+  return members
+    .map((item) => (typeof item === "string" ? item : item?.name))
+    .map((name) => String(name || "").trim())
+    .filter(Boolean)
+    .map((name) => ({ name }));
+};
+
 function calcFinalAmount(seasonalPrice, extraRoomCharge, customPrice, familyCount = 1) {
   const base = Number(customPrice) || Number(seasonalPrice) || 0;
   const extra = Number(extraRoomCharge) || 0;
@@ -30,11 +39,33 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
   }
 
   const tripId = req.query.tripId ? Number(req.query.tripId) : undefined;
+  const q = (req.query.q || "").toString().trim();
+  const dateFrom = req.query.dateFrom ? new Date(req.query.dateFrom) : null;
+  const dateTo = req.query.dateTo ? new Date(req.query.dateTo) : null;
   const ameerId = getAmeerContext(req.user);
 
   const where = tripId ? { tripId } : {};
   if (ameerId) {
     where.trip = { ameerId, status: "OPEN" };
+  }
+  if (q) {
+    where.OR = [
+      { travelerName: { contains: q, mode: "insensitive" } },
+      { passportOrIqama: { contains: q, mode: "insensitive" } },
+      { phoneNumber: { contains: q, mode: "insensitive" } },
+      { familyMembers: { some: { name: { contains: q, mode: "insensitive" } } } }
+    ];
+  }
+  if (dateFrom || dateTo) {
+    where.createdAt = {};
+    if (dateFrom) {
+      where.createdAt.gte = dateFrom;
+    }
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      where.createdAt.lte = end;
+    }
   }
 
   const travelers = await prisma.traveler.findMany({
@@ -42,6 +73,7 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
     orderBy: { createdAt: "desc" },
     include: {
       trip: { include: { package: true } },
+      familyMembers: { orderBy: { id: "asc" } },
       serviceProvider: true,
       createdBy: { select: { id: true, name: true, email: true } }
     }
@@ -63,9 +95,10 @@ router.get("/search", authenticate, asyncHandler(async (req, res) => {
   const ameerId = getAmeerContext(req.user);
   const where = {
     OR: [
-      { travelerName: { contains: q } },
-      { passportOrIqama: { contains: q } },
-      { phoneNumber: { contains: q } }
+      { travelerName: { contains: q, mode: "insensitive" } },
+      { passportOrIqama: { contains: q, mode: "insensitive" } },
+      { phoneNumber: { contains: q, mode: "insensitive" } },
+      { familyMembers: { some: { name: { contains: q, mode: "insensitive" } } } }
     ]
   };
 
@@ -77,6 +110,7 @@ router.get("/search", authenticate, asyncHandler(async (req, res) => {
     where,
     include: {
       trip: { include: { package: true } },
+      familyMembers: { orderBy: { id: "asc" } },
       serviceProvider: true
     },
     take: 20
@@ -96,6 +130,7 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
     phoneNumber,
     travelerType,
     familyCount,
+    familyMembers,
     coPassengers,
     tripId,
     amountPaid,
@@ -155,9 +190,13 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
     }
   }
 
+  const normalizedMembers = travelerType === "FAMILY" ? normalizeFamilyMembers(familyMembers) : [];
+  const computedFamilyCount = travelerType === "FAMILY"
+    ? 1 + normalizedMembers.length
+    : Number(familyCount || 1);
   const customPriceValue = customPrice ?? discountAmount ?? 0;
   const amountPaidValue = amountPaid ?? paymentAmount ?? 0;
-  const finalAmount = calcFinalAmount(trip.seasonalPrice, extraRoomCharge, customPriceValue, familyCount);
+  const finalAmount = calcFinalAmount(trip.seasonalPrice, extraRoomCharge, customPriceValue, computedFamilyCount);
   const normalizedPayment = normalizePayment(amountPaidValue, finalAmount, paymentType);
 
   const created = await prisma.traveler.create({
@@ -166,7 +205,7 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
       passportOrIqama,
       phoneNumber: phoneNumber || "",
       travelerType,
-      familyCount: Number(familyCount || 1),
+      familyCount: Number(computedFamilyCount || 1),
       coPassengers: coPassengers || null,
       tripId: Number(tripId),
       amountPaid: normalizedPayment.amountPaid,
@@ -178,7 +217,8 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
       finalAmount,
       status: status || "ACTIVE",
       serviceProviderId: Number(serviceProviderId),
-      createdById: req.user.id
+      createdById: req.user.id,
+      familyMembers: normalizedMembers.length ? { create: normalizedMembers } : undefined
     }
   });
 
@@ -217,6 +257,7 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
     phoneNumber,
     travelerType,
     familyCount,
+    familyMembers,
     coPassengers,
     tripId,
     amountPaid,
@@ -259,10 +300,22 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
     return res.status(403).json({ message: "You can only manage open trips" });
   }
 
+  const normalizedMembers = Array.isArray(familyMembers)
+    ? normalizeFamilyMembers(familyMembers)
+    : null;
   const nextExtra = extraRoomCharge ?? existing.extraRoomCharge;
   const nextCustom = customPrice ?? discountAmount ?? existing.customPrice;
-  const nextFamilyCount = familyCount ?? existing.familyCount;
-  const finalAmount = calcFinalAmount(trip.seasonalPrice, nextExtra, nextCustom, nextFamilyCount);
+  let resolvedFamilyCount = existing.familyCount;
+  if (travelerType) {
+    resolvedFamilyCount = travelerType === "FAMILY"
+      ? 1 + (normalizedMembers ? normalizedMembers.length : Math.max(existing.familyCount - 1, 0))
+      : 1;
+  } else if (normalizedMembers) {
+    resolvedFamilyCount = 1 + normalizedMembers.length;
+  } else if (familyCount !== undefined) {
+    resolvedFamilyCount = Number(familyCount) || 1;
+  }
+  const finalAmount = calcFinalAmount(trip.seasonalPrice, nextExtra, nextCustom, resolvedFamilyCount);
   const nextAmountPaid = amountPaid ?? paymentAmount ?? existing.amountPaid;
   const normalizedPayment = normalizePayment(nextAmountPaid, finalAmount, paymentType);
 
@@ -272,7 +325,7 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
     data.passportOrIqama = passportOrIqama;
     data.phoneNumber = phoneNumber ?? existing.phoneNumber;
     data.travelerType = travelerType;
-    data.familyCount = familyCount !== undefined ? Number(familyCount) : undefined;
+    data.familyCount = Number.isFinite(resolvedFamilyCount) ? Number(resolvedFamilyCount) : undefined;
     data.coPassengers = coPassengers !== undefined ? coPassengers : undefined;
     data.tripId = tripId ? Number(tripId) : undefined;
     data.amountPaid = amountPaid !== undefined || paymentAmount !== undefined ? normalizedPayment.amountPaid : undefined;
@@ -284,6 +337,12 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
     data.finalAmount = finalAmount;
     data.status = status;
     data.serviceProviderId = serviceProviderId ? Number(serviceProviderId) : undefined;
+    if (normalizedMembers) {
+      data.familyMembers = {
+        deleteMany: {},
+        create: normalizedMembers
+      };
+    }
   } else {
     data.amountPaid = amountPaid !== undefined || paymentAmount !== undefined ? normalizedPayment.amountPaid : undefined;
     data.paymentType = amountPaid !== undefined || paymentAmount !== undefined || paymentType ? normalizedPayment.paymentType : undefined;
@@ -292,6 +351,12 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
     data.extraRoomCharge = extraRoomCharge !== undefined ? Number(extraRoomCharge) : undefined;
     data.customPrice = customPrice !== undefined || discountAmount !== undefined ? Number(nextCustom) : undefined;
     data.finalAmount = finalAmount;
+    if (normalizedMembers) {
+      data.familyMembers = {
+        deleteMany: {},
+        create: normalizedMembers
+      };
+    }
   }
 
   const updated = await prisma.traveler.update({
