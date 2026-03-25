@@ -489,33 +489,7 @@ export default function Travelers() {
               </Select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-sand-600">Amount Paid (SAR)</label>
-              <Input
-                type="number"
-                value={form.amountPaid}
-                onChange={(e) => setForm({ ...form, amountPaid: e.target.value })}
-              />
-            </div>
-
-
-            <div>
-              <label className="text-xs font-semibold text-sand-600">Extra Room Charge</label>
-              <Input
-                type="number"
-                value={form.extraRoomCharge}
-                onChange={(e) => setForm({ ...form, extraRoomCharge: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-sand-600">Custom Price</label>
-              <Input
-                type="number"
-                value={form.customPrice}
-                onChange={(e) => setForm({ ...form, customPrice: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-sand-600">Final Amount</label>
+              <label className="text-xs font-semibold text-sand-600">Final Amount (Seasonal)</label>
               <Input value={finalAmount} readOnly />
             </div>
             <div>
