@@ -18,7 +18,7 @@ const sorters = {
   tripDate: (a, b) => new Date(a.tripDate) - new Date(b.tripDate),
   package: (a, b) => a.package?.packageName.localeCompare(b.package?.packageName || ""),
   route: (a, b) => a.package?.route.localeCompare(b.package?.route || ""),
-  travelers: (a, b) => (a.travelerCount ?? a._count?.travelers || 0) - (b.travelerCount ?? b._count?.travelers || 0)
+  travelers: (a, b) => (a.travelerCount ?? a._count?.travelers ?? 0) - (b.travelerCount ?? b._count?.travelers ?? 0)
 };
 
 const toDateKey = (value) => {
