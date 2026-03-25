@@ -33,18 +33,24 @@ const sorters = {
 };
 const normalizeFamilyMember = (member) => {
   if (!member || typeof member !== "object") return null;
+  const id = member.id ? String(member.id) : "";
   const name = String(member.name || "").trim();
   const passportOrIqama = String(member.passportOrIqama || member.passport || member.iqama || "").trim();
   if (!name && !passportOrIqama) return null;
-  return { name, passportOrIqama };
+  return { id, name, passportOrIqama };
 };
+
+const makeFamilyId = () => `fm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
 const parseFamilyMembers = (value) => {
   if (!value) return [];
   try {
     const parsed = JSON.parse(value);
     if (Array.isArray(parsed)) {
-      return parsed.map(normalizeFamilyMember).filter(Boolean);
+      return parsed
+        .map(normalizeFamilyMember)
+        .filter(Boolean)
+        .map((member) => ({ ...member, id: member.id || makeFamilyId() }));
     }
   } catch (err) {
     // Fall through to legacy parsing.
@@ -53,7 +59,7 @@ const parseFamilyMembers = (value) => {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((passportOrIqama) => ({ name: "", passportOrIqama }));
+    .map((passportOrIqama) => ({ id: makeFamilyId(), name: "", passportOrIqama }));
 };
 export default function Travelers() {
   const { user } = useAuth();
@@ -186,12 +192,13 @@ export default function Travelers() {
     const normalizedMembers = form.travelerType === "FAMILY"
       ? (form.familyMembers || []).map(normalizeFamilyMember).filter(Boolean)
       : [];
+    const payloadMembers = normalizedMembers.map(({ name, passportOrIqama }) => ({ name, passportOrIqama }));
     const computedFamilyCount = form.travelerType === "FAMILY" ? 1 + normalizedMembers.length : 1;
     const { familyMembers, ...rest } = form;
     const payload = {
       ...rest,
       familyCount: computedFamilyCount,
-      coPassengers: normalizedMembers.length ? JSON.stringify(normalizedMembers) : "",
+      coPassengers: payloadMembers.length ? JSON.stringify(payloadMembers) : "",
     };
 
     try {
@@ -339,7 +346,7 @@ export default function Travelers() {
   const addFamilyMember = () => {
     setForm((prev) => ({
       ...prev,
-      familyMembers: [...(prev.familyMembers || []), { name: "", passportOrIqama: "" }]
+      familyMembers: [...(prev.familyMembers || []), { id: makeFamilyId(), name: "", passportOrIqama: "" }]
     }));
   };
 
@@ -435,7 +442,7 @@ export default function Travelers() {
                   {form.familyMembers.length ? (
                     <div className="mt-2 space-y-2">
                       {form.familyMembers.map((member, index) => (
-                        <div key={`${index}-${member.name}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                        <div key={member.id || `member-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
                           <Input
                             value={member.name || ""}
                             onChange={(e) => updateFamilyMember(index, "name", e.target.value)}
