@@ -12,10 +12,22 @@ const allowedPaymentStatuses = ["PAID", "PARTIAL", "UNPAID"];
 const normalizeFamilyMembers = (members) => {
   if (!Array.isArray(members)) return [];
   return members
-    .map((item) => (typeof item === "string" ? item : item?.name))
-    .map((name) => String(name || "").trim())
-    .filter(Boolean)
-    .map((name) => ({ name }));
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === "string") {
+        return { name: item };
+      }
+      return { name: item.name, passportOrIqama: item.passportOrIqama };
+    })
+    .map((item) => ({
+      name: String(item?.name || "").trim(),
+      passportOrIqama: String(item?.passportOrIqama || "").trim()
+    }))
+    .filter((item) => item.name)
+    .map((item) => ({
+      name: item.name,
+      passportOrIqama: item.passportOrIqama || null
+    }));
 };
 
 function calcFinalAmount(seasonalPrice, extraRoomCharge, customPrice, familyCount = 1) {
@@ -53,7 +65,8 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
       { travelerName: { contains: q, mode: "insensitive" } },
       { passportOrIqama: { contains: q, mode: "insensitive" } },
       { phoneNumber: { contains: q, mode: "insensitive" } },
-      { familyMembers: { some: { name: { contains: q, mode: "insensitive" } } } }
+      { familyMembers: { some: { name: { contains: q, mode: "insensitive" } } } },
+      { familyMembers: { some: { passportOrIqama: { contains: q, mode: "insensitive" } } } }
     ];
   }
   if (dateFrom || dateTo) {
@@ -98,7 +111,8 @@ router.get("/search", authenticate, asyncHandler(async (req, res) => {
       { travelerName: { contains: q, mode: "insensitive" } },
       { passportOrIqama: { contains: q, mode: "insensitive" } },
       { phoneNumber: { contains: q, mode: "insensitive" } },
-      { familyMembers: { some: { name: { contains: q, mode: "insensitive" } } } }
+      { familyMembers: { some: { name: { contains: q, mode: "insensitive" } } } },
+      { familyMembers: { some: { passportOrIqama: { contains: q, mode: "insensitive" } } } }
     ]
   };
 

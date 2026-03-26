@@ -36,11 +36,12 @@ router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   }
 
   const created = await prisma.$transaction(async (tx) => {
+    const phoneValue = phone ? String(phone).trim() : "";
     const ameer = await tx.ameer.create({
-      data: { name, phone: phone ? String(phone).trim() : null, notes: notes || null, passportNumber: passportNumber || null }
+      data: { name, phone: phoneValue, notes: notes || null, passportNumber: passportNumber || null }
     });
 
-    const digits = phone ? String(phone).replace(/\D/g, "") : "";
+    const digits = phoneValue ? phoneValue.replace(/\D/g, "") : "";
     let userEmail = providedEmail;
     if (!userEmail) {
       const base = digits ? `ameer${digits}` : `ameer${ameer.id}`;
@@ -76,11 +77,12 @@ router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
 router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const { name, phone, notes, passportNumber, email, password } = req.body || {};
+  const phoneValue = phone !== undefined ? (phone ? String(phone).trim() : "") : undefined;
   const updated = await prisma.ameer.update({
     where: { id },
     data: {
       name,
-      phone: phone !== undefined ? (phone ? String(phone).trim() : null) : undefined,
+      phone: phoneValue,
       notes: notes || null,
       passportNumber: passportNumber || null
     }

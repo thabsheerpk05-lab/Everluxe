@@ -19,7 +19,7 @@ router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const created = await prisma.driver.create({
     data: {
       driverName,
-      phoneNumber: phoneNumber ? String(phoneNumber).trim() : null,
+      phoneNumber: phoneNumber ? String(phoneNumber).trim() : "",
       passportNumber: passportNumber || null
     }
   });
@@ -29,11 +29,12 @@ router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
 router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const { driverName, phoneNumber, passportNumber } = req.body || {};
+  const phoneValue = phoneNumber !== undefined ? (phoneNumber ? String(phoneNumber).trim() : "") : undefined;
   const updated = await prisma.driver.update({
     where: { id },
     data: {
       driverName,
-      phoneNumber: phoneNumber !== undefined ? (phoneNumber ? String(phoneNumber).trim() : null) : undefined,
+      phoneNumber: phoneValue,
       passportNumber: passportNumber || null
     }
   });

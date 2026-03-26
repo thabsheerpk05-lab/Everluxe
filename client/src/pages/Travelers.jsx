@@ -34,9 +34,10 @@ const travelerStatuses = ["ACTIVE", "CANCELLED"];
 const normalizeFamilyMember = (member) => {
   if (!member || typeof member !== "object") return null;
   const id = member.id ? String(member.id) : "";
-  const name = String(member.name || member.passportOrIqama || member.passport || member.iqama || "").trim();
-  if (!name) return null;
-  return { id, name };
+  const name = String(member.name || "").trim();
+  const passportOrIqama = String(member.passportOrIqama || member.passport || member.iqama || "").trim();
+  if (!name && !passportOrIqama) return null;
+  return { id, name, passportOrIqama };
 };
 
 const makeFamilyId = () => `fm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -64,7 +65,7 @@ const parseFamilyMembers = (value) => {
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean)
-    .map((name) => ({ id: makeFamilyId(), name }));
+    .map((passportOrIqama) => ({ id: makeFamilyId(), name: "", passportOrIqama }));
 };
 export default function Travelers() {
   const { user } = useAuth();
@@ -216,7 +217,10 @@ export default function Travelers() {
     const normalizedMembers = form.travelerType === "FAMILY"
       ? (form.familyMembers || []).map(normalizeFamilyMember).filter(Boolean)
       : [];
-    const payloadMembers = normalizedMembers.map(({ name }) => ({ name }));
+    const payloadMembers = normalizedMembers.map(({ name, passportOrIqama }) => ({
+      name,
+      passportOrIqama: passportOrIqama || ""
+    }));
     const computedFamilyCount = form.travelerType === "FAMILY" ? 1 + normalizedMembers.length : 1;
     const { familyMembers, ...rest } = form;
     const payload = {
@@ -373,7 +377,7 @@ export default function Travelers() {
   const addFamilyMember = () => {
     setForm((prev) => ({
       ...prev,
-      familyMembers: [...(prev.familyMembers || []), { id: makeFamilyId(), name: "" }]
+      familyMembers: [...(prev.familyMembers || []), { id: makeFamilyId(), name: "", passportOrIqama: "" }]
     }));
   };
 
@@ -464,17 +468,22 @@ export default function Travelers() {
 
                 <div className="md:col-span-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                    <label className="text-xs font-semibold text-sand-600">Family Members (Names)</label>
+                    <label className="text-xs font-semibold text-sand-600">Family Members (Name + Passport/Iqama)</label>
                     <Button type="button" size="sm" variant="outline" onClick={addFamilyMember}>Add Member</Button>
                   </div>
                   {form.familyMembers.length ? (
                     <div className="mt-2 space-y-2">
                       {form.familyMembers.map((member, index) => (
-                        <div key={member.id || `member-${index}`} className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                        <div key={member.id || `member-${index}`} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
                           <Input
                             value={member.name || ""}
                             onChange={(e) => updateFamilyMember(index, "name", e.target.value)}
                             placeholder="Member name"
+                          />
+                          <Input
+                            value={member.passportOrIqama || ""}
+                            onChange={(e) => updateFamilyMember(index, "passportOrIqama", e.target.value)}
+                            placeholder="Passport/Iqama"
                           />
                           <Button type="button" size="sm" variant="outline" onClick={() => removeFamilyMember(index)}>Remove</Button>
                         </div>
@@ -625,7 +634,9 @@ export default function Travelers() {
                     {traveler.travelerType === "FAMILY" && traveler.familyMembers?.length ? (
                       <div className="mt-1 space-y-1 text-xs text-sand-500">
                         {traveler.familyMembers.map((member) => (
-                          <div key={member.id}>{member.name}</div>
+                          <div key={member.id}>
+                            {member.name}{member.passportOrIqama ? ` - ${member.passportOrIqama}` : ""}
+                          </div>
                         ))}
                       </div>
                     ) : null}
