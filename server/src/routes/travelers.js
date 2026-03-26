@@ -70,15 +70,17 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
     ];
   }
   if (dateFrom || dateTo) {
-    where.createdAt = {};
+    const tripWhere = where.trip ? { ...where.trip } : {};
+    tripWhere.tripDate = {};
     if (dateFrom) {
-      where.createdAt.gte = dateFrom;
+      tripWhere.tripDate.gte = dateFrom;
     }
     if (dateTo) {
       const end = new Date(dateTo);
       end.setHours(23, 59, 59, 999);
-      where.createdAt.lte = end;
+      tripWhere.tripDate.lte = end;
     }
+    where.trip = tripWhere;
   }
 
   const travelers = await prisma.traveler.findMany({

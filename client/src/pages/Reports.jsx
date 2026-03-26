@@ -17,7 +17,12 @@ const reportTypes = [
 
 function buildReport(type, passengers) {
   const safe = (value) => (value === null || value === undefined || value === "" ? "-" : value);
-  const sorted = [...passengers].sort((a, b) => (a.serial ?? 0) - (b.serial ?? 0));
+  const sorted = [...passengers].sort((a, b) => {
+    const aDate = a.tripDate ? new Date(a.tripDate).getTime() : 0;
+    const bDate = b.tripDate ? new Date(b.tripDate).getTime() : 0;
+    if (aDate !== bDate) return aDate - bDate;
+    return (a.serial ?? 0) - (b.serial ?? 0);
+  });
 
   if (type === "BUSLIST") {
     const parseMembers = (value) => {
@@ -58,7 +63,7 @@ function buildReport(type, passengers) {
       if (typeDiff !== 0) return typeDiff;
       const aCount = Number(a.familyCount || 0);
       const bCount = Number(b.familyCount || 0);
-      if (bType === "family" || aType === "family") {
+      if (aType === "family" || bType === "family") {
         if (bCount !== aCount) return bCount - aCount;
       }
       return (a.serial ?? 0) - (b.serial ?? 0);
@@ -69,7 +74,9 @@ function buildReport(type, passengers) {
     sortedByFamily.forEach((p) => {
       const typeRaw = String(p.travelerType || "");
       const isFamily = typeRaw.toLowerCase() === "family";
-      const members = parseMembers(p.coPassengers);
+      const members = p.familyMembers?.length
+        ? p.familyMembers.map((member) => String(member.name || "").trim()).filter(Boolean)
+        : parseMembers(p.coPassengers);
       const familyCount = Number(p.familyCount || members.length || 0);
       const typeLabel = isFamily && familyCount > 0
         ? `FAMILY (${familyCount})`
@@ -82,7 +89,7 @@ function buildReport(type, passengers) {
         safe(p.phoneNumber)
       ]);
 
-      if (isFamily) {
+      if (isFamily && members.length) {
         members.forEach((member) => {
           rows.push([
             rowSerial++,
@@ -157,7 +164,7 @@ function buildReport(type, passengers) {
       if (typeDiff !== 0) return typeDiff;
       const aCount = Number(a.familyCount || 0);
       const bCount = Number(b.familyCount || 0);
-      if (bType === "family" || aType === "family") {
+      if (aType === "family" || bType === "family") {
         if (bCount !== aCount) return bCount - aCount;
       }
       return (a.serial ?? 0) - (b.serial ?? 0);
@@ -168,7 +175,9 @@ function buildReport(type, passengers) {
     sortedByFamily.forEach((p) => {
       const typeRaw = String(p.travelerType || "");
       const isFamily = typeRaw.toLowerCase() === "family";
-      const members = parseMembers(p.coPassengers);
+      const members = p.familyMembers?.length
+        ? p.familyMembers.map((member) => ({ name: member.name, iqama: member.passportOrIqama || "" }))
+        : parseMembers(p.coPassengers);
 
       rows.push([
         rowSerial++,
@@ -177,7 +186,7 @@ function buildReport(type, passengers) {
         safe(p.passportOrIqama)
       ]);
 
-      if (isFamily) {
+      if (isFamily && members.length) {
         members.forEach((member) => {
           rows.push([
             rowSerial++,
@@ -195,14 +204,68 @@ function buildReport(type, passengers) {
     };
   }
   return {
-    headers: ["S.No", "Name", "Passport/Iqama", "Phone", "Payment Status"],
-    rows: sorted.map((p, idx) => [
-      safe(p.serial ?? idx + 1),
-      safe(p.travelerName),
-      safe(p.passportOrIqama),
-      safe(p.phoneNumber),
-      safe(p.paymentStatus)
-    ])
+    headers: ["S.No", "Travel Date", "Name", "Passport/Iqama", "Type", "Phone", "Payment Amount", "Service Provider"],
+    rows: (() => {
+      const sortedByMonth = [...passengers].sort((a, b) => {
+        const aDate = a.tripDate ? new Date(a.tripDate).getTime() : 0;
+        const bDate = b.tripDate ? new Date(b.tripDate).getTime() : 0;
+        if (aDate !== bDate) return aDate - bDate;
+        const aType = String(a.travelerType || "").toLowerCase();
+        const bType = String(b.travelerType || "").toLowerCase();
+        const typeOrder = (type) => (type === "family" ? 0 : type === "bachelor" ? 1 : 2);
+        const typeDiff = typeOrder(aType) - typeOrder(bType);
+        if (typeDiff !== 0) return typeDiff;
+        const aCount = Number(a.familyCount || 0);
+        const bCount = Number(b.familyCount || 0);
+        if (aType === "family" || bType === "family") {
+          if (bCount !== aCount) return bCount - aCount;
+        }
+        return (a.serial ?? 0) - (b.serial ?? 0);
+      });
+
+      const rows = [];
+      let rowSerial = 1;
+      sortedByMonth.forEach((p) => {
+        const typeRaw = String(p.travelerType || "");
+        const isFamily = typeRaw.toLowerCase() === "family";
+        const members = p.familyMembers?.length
+          ? p.familyMembers.map((member) => ({
+            name: member.name,
+            passportOrIqama: member.passportOrIqama || ""
+          }))
+          : [];
+        const familyCount = Number(p.familyCount || members.length || 0);
+        const typeLabel = isFamily && familyCount > 0 ? `FAMILY (${familyCount})` : safe(p.travelerType);
+        const amountValue = p.tripStatus === "FINISHED" ? (p.amountPaid ?? 0) : "";
+
+        rows.push([
+          rowSerial++,
+          safe(p.tripDate ? formatDate(p.tripDate) : ""),
+          safe(p.travelerName),
+          safe(p.passportOrIqama),
+          typeLabel,
+          safe(p.phoneNumber),
+          safe(amountValue),
+          safe(p.serviceProviderName)
+        ]);
+
+        if (isFamily && members.length) {
+          members.forEach((member) => {
+            rows.push([
+              rowSerial++,
+              safe(p.tripDate ? formatDate(p.tripDate) : ""),
+              safe(member.name),
+              safe(member.passportOrIqama),
+              "MEMBER",
+              "",
+              "",
+              safe(p.serviceProviderName)
+            ]);
+          });
+        }
+      });
+      return rows;
+    })()
   };
 }
 
@@ -219,9 +282,12 @@ function passengerColumnWidths(headers) {
   return headers.map((header) => {
     const key = header.toLowerCase();
     if (key.includes("s.no")) return { wch: 6 };
+    if (key.includes("travel date")) return { wch: 16 };
     if (key.includes("phone")) return { wch: 16 };
     if (key.includes("passport")) return { wch: 18 };
     if (key.includes("status")) return { wch: 16 };
+    if (key.includes("provider")) return { wch: 20 };
+    if (key.includes("payment")) return { wch: 16 };
     return { wch: 28 };
   });
 }
@@ -230,6 +296,7 @@ export default function Reports() {
   const [trips, setTrips] = useState([]);
   const [providers, setProviders] = useState([]);
   const [tripId, setTripId] = useState("");
+  const [month, setMonth] = useState("");
   const [type, setType] = useState("LIST");
   const [passengers, setPassengers] = useState([]);
   const [tripMeta, setTripMeta] = useState(null);
@@ -253,8 +320,34 @@ export default function Reports() {
     loadTrips();
   }, []);
 
+  const months = useMemo(() => {
+    const monthMap = new Map();
+    trips.forEach((trip) => {
+      if (!trip.tripDate) return;
+      const date = new Date(trip.tripDate);
+      if (Number.isNaN(date.getTime())) return;
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      if (!monthMap.has(value)) {
+        monthMap.set(value, date);
+      }
+    });
+    return Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([value, date]) => ({
+        value,
+        label: date.toLocaleString("en-GB", { month: "long", year: "numeric" })
+      }));
+  }, [trips]);
+
   
   const handleGenerate = async () => {
+    if (type === "LIST") {
+      if (!month) return;
+      const data = await apiFetch(`/reports/travelers?month=${month}`);
+      setPassengers(data.passengers);
+      setTripMeta(null);
+      return;
+    }
     if (!tripId) return;
     const data = await apiFetch(`/reports/trip/${tripId}`);
     setPassengers(data.passengers);
@@ -278,7 +371,7 @@ export default function Reports() {
   const safeText = (value) => (value === null || value === undefined || value === "" ? "-" : value);
   const personLine = (label, name, iqama) => `${label}: ${safeText(name)} | Iqama: ${safeText(iqama)}`;
   const showBusMeta = type === "BUSLIST" || type === "KASHF";
-  const reportMeta = tripMeta
+  const reportMeta = tripMeta && type !== "LIST"
     ? showBusMeta
       ? [
           `Bus Number: ${safeText(tripMeta.busNumber)}`,
@@ -300,7 +393,8 @@ export default function Reports() {
       headerTitle: "WADINOOR DAILY UMRAH SERVICE",
       meta: reportMeta,
       alignments: columnAlignments(report.headers),
-      generatedAt: new Date()
+      includeGenerated: false,
+      includeMeta: type !== "LIST"
     });
   };
 
@@ -311,7 +405,8 @@ export default function Reports() {
       meta: reportMeta,
       alignments: columnAlignments(report.headers),
       columnWidths: passengerColumnWidths(report.headers),
-      generatedAt: new Date()
+      includeGenerated: false,
+      includeMeta: type !== "LIST"
     });
   };
 
@@ -329,17 +424,31 @@ export default function Reports() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-            <div>
-              <label className="text-xs font-semibold text-sand-600">Trip</label>
-              <Select value={tripId} onChange={(e) => setTripId(e.target.value)}>
-                <option value="">Select trip</option>
-                {trips.map((trip) => (
-                  <option key={trip.id} value={trip.id}>
-                    {trip.package?.packageName} - {new Date(trip.tripDate).toLocaleDateString("en-GB")}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            {type === "LIST" ? (
+              <div>
+                <label className="text-xs font-semibold text-sand-600">Month</label>
+                <Select value={month} onChange={(e) => setMonth(e.target.value)}>
+                  <option value="">Select month</option>
+                  {months.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs font-semibold text-sand-600">Trip</label>
+                <Select value={tripId} onChange={(e) => setTripId(e.target.value)}>
+                  <option value="">Select trip</option>
+                  {trips.map((trip) => (
+                    <option key={trip.id} value={trip.id}>
+                      {trip.package?.packageName} - {new Date(trip.tripDate).toLocaleDateString("en-GB")}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            )}
             <div>
               <label className="text-xs font-semibold text-sand-600">Report Type</label>
               <Select value={type} onChange={(e) => setType(e.target.value)}>
@@ -351,7 +460,9 @@ export default function Reports() {
               </Select>
             </div>
             <div className="flex flex-wrap items-end gap-2 md:col-span-2 lg:col-span-1 lg:justify-end">
-              <Button onClick={handleGenerate}>Generate</Button>
+              <Button onClick={handleGenerate} disabled={type === "LIST" ? !month : !tripId}>
+                Generate
+              </Button>
               <Button variant="outline" onClick={handleExportPdf} disabled={!passengers.length}>
                 Export PDF
               </Button>
@@ -361,7 +472,7 @@ export default function Reports() {
             </div>
           </div>
 
-          {tripMeta ? (
+          {tripMeta && type !== "LIST" ? (
             showBusMeta ? (
               <div className="mt-3 space-y-1 text-xs text-sand-600">
                 <div>Bus Number: {safeText(tripMeta.busNumber)}</div>

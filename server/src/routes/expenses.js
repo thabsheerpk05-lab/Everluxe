@@ -5,7 +5,18 @@ import { hasPermission, getAmeerContext } from "../lib/permissions.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
-const allowedCategories = ["BUS", "ROOM", "MEAL", "TRAVEL", "GENERAL", "OTHER"];
+const allowedCategories = ["BUS", "ROOM", "MEAL", "TRAVEL", "GENERAL", "ADMINISTRATIVE", "OTHER"];
+const categoryAliases = {
+  Jadwal: "TRAVEL",
+  Ameer: "GENERAL",
+  Administrative: "ADMINISTRATIVE",
+  Admin: "ADMINISTRATIVE"
+};
+
+const normalizeCategory = (value) => {
+  if (!value) return value;
+  return categoryAliases[value] || value;
+};
 
 router.get("/", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_view_expenses")) {
@@ -35,7 +46,8 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Date, category, and amount are required" });
   }
 
-  if (!allowedCategories.includes(category)) {
+  const normalizedCategory = normalizeCategory(category);
+  if (!allowedCategories.includes(normalizedCategory)) {
     return res.status(400).json({ message: "Invalid expense category" });
   }
 
@@ -59,7 +71,7 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
   const created = await prisma.expense.create({
     data: {
       date: new Date(date),
-      category,
+      category: normalizedCategory,
       description,
       amount: Number(amount),
       tripId: tripId ? Number(tripId) : null,
@@ -86,7 +98,8 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
   }
 
   const { date, category, description, amount, tripId } = req.body || {};
-  if (category && !allowedCategories.includes(category)) {
+  const normalizedCategory = category ? normalizeCategory(category) : undefined;
+  if (normalizedCategory && !allowedCategories.includes(normalizedCategory)) {
     return res.status(400).json({ message: "Invalid expense category" });
   }
 
@@ -112,7 +125,7 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
     where: { id },
     data: {
       date: date ? new Date(date) : undefined,
-      category,
+      category: normalizedCategory,
       description,
       amount: amount !== undefined ? Number(amount) : undefined,
       tripId: tripId !== undefined ? (tripId ? Number(tripId) : null) : undefined

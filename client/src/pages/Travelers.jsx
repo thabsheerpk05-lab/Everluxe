@@ -566,7 +566,7 @@ export default function Travelers() {
                 </Select>
               </div>
               <div className="w-full sm:w-40">
-                <label className="text-xs font-semibold text-sand-600">Date From</label>
+                <label className="text-xs font-semibold text-sand-600">Trip Date From</label>
                 <Input
                   type="date"
                   value={dateFilters.from}
@@ -574,7 +574,7 @@ export default function Travelers() {
                 />
               </div>
               <div className="w-full sm:w-40">
-                <label className="text-xs font-semibold text-sand-600">Date To</label>
+                <label className="text-xs font-semibold text-sand-600">Trip Date To</label>
                 <Input
                   type="date"
                   value={dateFilters.to}

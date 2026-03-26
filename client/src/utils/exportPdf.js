@@ -17,6 +17,8 @@ export function exportToPdf(title, headers, rows, options = {}) {
   const headerTitle = options.headerTitle || DEFAULT_HEADER;
   const meta = options.meta || [];
   const alignments = options.alignments || headers.map((_, idx) => (idx === 0 ? "center" : "left"));
+  const includeGenerated = options.includeGenerated !== false;
+  const includeMeta = options.includeMeta !== false;
   const generatedAt = options.generatedAt || new Date();
   const boldRows = options.boldRows || [];
   const metaTitle = options.metaTitle || "Report Details";
@@ -47,17 +49,19 @@ export function exportToPdf(title, headers, rows, options = {}) {
   doc.setTextColor(17, 24, 39);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  const metaItems = [
-    { label: "Generated", value: formatDate(generatedAt) },
-    ...meta.map((line) => {
-      const idx = line.indexOf(":");
-      if (idx === -1) return { label: "Info", value: line };
-      return {
-        label: line.slice(0, idx).trim(),
-        value: line.slice(idx + 1).trim() || "-"
-      };
-    })
-  ];
+  const metaItems = includeMeta
+    ? [
+        ...(includeGenerated ? [{ label: "Generated", value: formatDate(generatedAt) }] : []),
+        ...meta.map((line) => {
+          const idx = line.indexOf(":");
+          if (idx === -1) return { label: "Info", value: line };
+          return {
+            label: line.slice(0, idx).trim(),
+            value: line.slice(idx + 1).trim() || "-"
+          };
+        })
+      ]
+    : [];
 
   const metaBoxY = 90;
   const metaBoxPadding = 12;
@@ -71,42 +75,48 @@ export function exportToPdf(title, headers, rows, options = {}) {
     metaRows.push([metaItems[i], metaItems[i + 1]].filter(Boolean));
   }
 
-  const rowHeights = metaRows.map((row) => {
-    const lineCounts = row.map((item) =>
-      doc.splitTextToSize(item.value || "-", valueWidth).length
-    );
-    return Math.max(1, ...lineCounts) * 12;
-  });
-  const metaBoxHeight =
-    metaBoxPadding * 2 +
-    metaTitleHeight +
-    rowHeights.reduce((sum, h) => sum + h, 0) +
-    (metaRows.length - 1) * 4;
-
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(marginX, metaBoxY, contentWidth, metaBoxHeight, 7, 7, "FD");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9);
-  doc.setTextColor(brand.r, brand.g, brand.b);
-  doc.text(metaTitle.toUpperCase(), marginX + 10, metaBoxY + metaBoxPadding + 10);
-
-  let metaY = metaBoxY + metaBoxPadding + metaTitleHeight;
-  doc.setFontSize(9);
-  metaRows.forEach((row, rowIndex) => {
-    const rowHeight = rowHeights[rowIndex];
-    row.forEach((item, colIndex) => {
-      const colX = marginX + 10 + colIndex * (columnWidth + gutter);
-      doc.setFont("helvetica", "bold");
-      doc.setTextColor(100, 116, 139);
-      doc.text(`${(item.label || "Info").toUpperCase()}:`, colX, metaY + 9);
-      doc.setFont("helvetica", "normal");
-      doc.setTextColor(17, 24, 39);
-      const valueLines = doc.splitTextToSize(item.value || "-", valueWidth);
-      doc.text(valueLines, colX + labelWidth, metaY + 9);
+  let tableStartY = metaBoxY;
+  if (includeMeta && metaItems.length) {
+    const rowHeights = metaRows.map((row) => {
+      const lineCounts = row.map((item) =>
+        doc.splitTextToSize(item.value || "-", valueWidth).length
+      );
+      return Math.max(1, ...lineCounts) * 12;
     });
-    metaY += rowHeight + 4;
-  });
+    const metaBoxHeight =
+      metaBoxPadding * 2 +
+      metaTitleHeight +
+      rowHeights.reduce((sum, h) => sum + h, 0) +
+      (metaRows.length - 1) * 4;
+
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(marginX, metaBoxY, contentWidth, metaBoxHeight, 7, 7, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(brand.r, brand.g, brand.b);
+    doc.text(metaTitle.toUpperCase(), marginX + 10, metaBoxY + metaBoxPadding + 10);
+
+    let metaY = metaBoxY + metaBoxPadding + metaTitleHeight;
+    doc.setFontSize(9);
+    metaRows.forEach((row, rowIndex) => {
+      const rowHeight = rowHeights[rowIndex];
+      row.forEach((item, colIndex) => {
+        const colX = marginX + 10 + colIndex * (columnWidth + gutter);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(100, 116, 139);
+        doc.text(`${(item.label || "Info").toUpperCase()}:`, colX, metaY + 9);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(17, 24, 39);
+        const valueLines = doc.splitTextToSize(item.value || "-", valueWidth);
+        doc.text(valueLines, colX + labelWidth, metaY + 9);
+      });
+      metaY += rowHeight + 4;
+    });
+    tableStartY = metaBoxY + metaBoxHeight + 14;
+  } else {
+    tableStartY = 90;
+  }
 
   const columnStyles = {};
   alignments.forEach((align, idx) => {
@@ -116,7 +126,7 @@ export function exportToPdf(title, headers, rows, options = {}) {
   autoTable(doc, {
     head: [headers],
     body: rows,
-    startY: metaBoxY + metaBoxHeight + 14,
+    startY: tableStartY,
     theme: "plain",
     styles: {
       font: "helvetica",

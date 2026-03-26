@@ -141,9 +141,29 @@ router.get("/trip/:tripId", authenticate, asyncHandler(async (req, res) => {
     include: { package: true, driver: true, coDriver: true, ameer: true, bus: true }
   });
 
+  const scope = String(req.query.scope || "").toLowerCase();
+  let travelerWhere = { tripId, ...activeFilter };
+  if (scope === "month" && trip?.tripDate) {
+    const start = new Date(trip.tripDate);
+    start.setDate(1);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999);
+    travelerWhere = {
+      ...activeFilter,
+      trip: {
+        tripDate: { gte: start, lte: end }
+      }
+    };
+  }
+
   const travelers = await prisma.traveler.findMany({
-    where: { tripId, ...activeFilter },
-    orderBy: { createdAt: "asc" }
+    where: travelerWhere,
+    orderBy: { createdAt: "asc" },
+    include: {
+      trip: true,
+      familyMembers: { orderBy: { id: "asc" } },
+      serviceProvider: true
+    }
   });
 
   const formatted = travelers.map((traveler, index) => ({
@@ -153,8 +173,15 @@ router.get("/trip/:tripId", authenticate, asyncHandler(async (req, res) => {
     phoneNumber: traveler.phoneNumber,
     travelerType: traveler.travelerType,
     familyCount: traveler.familyCount,
-    coPassengers: traveler.coPassengers,
-    paymentStatus: traveler.paymentStatus
+    paymentStatus: traveler.paymentStatus,
+    amountPaid: traveler.amountPaid,
+    tripDate: traveler.trip?.tripDate || trip?.tripDate || null,
+    tripStatus: traveler.trip?.status || trip?.status || null,
+    serviceProviderName: traveler.serviceProvider?.providerName || "",
+    familyMembers: traveler.familyMembers?.map((member) => ({
+      name: member.name,
+      passportOrIqama: member.passportOrIqama || ""
+    })) || []
   }));
 
   return res.json({
@@ -171,6 +198,68 @@ router.get("/trip/:tripId", authenticate, asyncHandler(async (req, res) => {
       ameerName: trip?.ameer?.name,
       ameerIqama: trip?.ameer?.passportNumber
     },
+    passengers: formatted
+  });
+}));
+
+router.get("/travelers", authenticate, asyncHandler(async (req, res) => {
+  if (!hasPermission(req.user, "can_view_reports")) {
+    return res.status(403).json({ message: "Access denied" });
+  }
+
+  const month = String(req.query.month || "").trim();
+  if (!month) {
+    return res.status(400).json({ message: "Month is required" });
+  }
+  const [yearStr, monthStr] = month.split("-");
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr) - 1;
+  if (!year || monthIndex < 0 || monthIndex > 11) {
+    return res.status(400).json({ message: "Invalid month format. Use YYYY-MM." });
+  }
+
+  const start = new Date(year, monthIndex, 1, 0, 0, 0, 0);
+  const end = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
+
+  const ameerId = getAmeerContext(req.user);
+  const where = {
+    ...activeFilter,
+    trip: {
+      tripDate: { gte: start, lte: end },
+      ...(ameerId ? { ameerId } : {})
+    }
+  };
+
+  const travelers = await prisma.traveler.findMany({
+    where,
+    orderBy: [{ trip: { tripDate: "asc" } }, { createdAt: "asc" }],
+    include: {
+      trip: true,
+      familyMembers: { orderBy: { id: "asc" } },
+      serviceProvider: true
+    }
+  });
+
+  const formatted = travelers.map((traveler, index) => ({
+    serial: index + 1,
+    travelerName: traveler.travelerName,
+    passportOrIqama: traveler.passportOrIqama,
+    phoneNumber: traveler.phoneNumber,
+    travelerType: traveler.travelerType,
+    familyCount: traveler.familyCount,
+    paymentStatus: traveler.paymentStatus,
+    amountPaid: traveler.amountPaid,
+    tripDate: traveler.trip?.tripDate || null,
+    tripStatus: traveler.trip?.status || null,
+    serviceProviderName: traveler.serviceProvider?.providerName || "",
+    familyMembers: traveler.familyMembers?.map((member) => ({
+      name: member.name,
+      passportOrIqama: member.passportOrIqama || ""
+    })) || []
+  }));
+
+  return res.json({
+    month,
     passengers: formatted
   });
 }));

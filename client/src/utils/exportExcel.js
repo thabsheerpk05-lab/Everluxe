@@ -46,6 +46,8 @@ function formatDate(date) {
 export function exportToExcel(filename, headers, rows, options = {}) {
   const headerTitle = options.headerTitle || DEFAULT_HEADER;
   const reportTitle = options.title || "";
+  const includeGenerated = options.includeGenerated !== false;
+  const includeMeta = options.includeMeta !== false;
   const generatedAt = options.generatedAt || new Date();
   const meta = options.meta || [];
   const metaTitle = options.metaTitle || "Report Details";
@@ -55,9 +57,12 @@ export function exportToExcel(filename, headers, rows, options = {}) {
 
   const sheetRows = [];
   sheetRows.push([headerTitle]);
+  const titleRowIndex = reportTitle ? sheetRows.length : null;
   if (reportTitle) sheetRows.push([reportTitle]);
-  sheetRows.push([`Generated: ${formatDate(generatedAt)}`]);
-  if (meta.length) {
+  const generatedRowIndex = includeGenerated ? sheetRows.length : null;
+  if (includeGenerated) sheetRows.push([`Generated: ${formatDate(generatedAt)}`]);
+  const metaTitleRowIndex = includeMeta && meta.length ? sheetRows.length : null;
+  if (includeMeta && meta.length) {
     sheetRows.push([metaTitle.toUpperCase()]);
     meta.forEach((line) => sheetRows.push([line]));
   }
@@ -76,12 +81,11 @@ export function exportToExcel(filename, headers, rows, options = {}) {
     merges.push({ s: { r: rowIndex, c: 0 }, e: { r: rowIndex, c: colCount - 1 } });
   };
   mergeRow(0);
-  if (reportTitle) mergeRow(1);
-  mergeRow(reportTitle ? 2 : 1);
-  const metaStartRow = reportTitle ? 3 : 2;
-  if (meta.length) {
-    mergeRow(metaStartRow);
-    meta.forEach((_, idx) => mergeRow(metaStartRow + 1 + idx));
+  if (titleRowIndex !== null) mergeRow(titleRowIndex);
+  if (generatedRowIndex !== null) mergeRow(generatedRowIndex);
+  if (metaTitleRowIndex !== null) {
+    mergeRow(metaTitleRowIndex);
+    meta.forEach((_, idx) => mergeRow(metaTitleRowIndex + 1 + idx));
   }
   worksheet["!merges"] = merges;
   worksheet["!cols"] = columnWidths;
@@ -138,18 +142,19 @@ export function exportToExcel(filename, headers, rows, options = {}) {
     }
   }
 
-  const generatedRowIndex = reportTitle ? 2 : 1;
-  const generatedCell = worksheet[XLSX.utils.encode_cell({ r: generatedRowIndex, c: 0 })];
-  if (generatedCell) {
-    generatedCell.s = {
-      font: { sz: 9, color: { rgb: "475569" } },
-      alignment: { horizontal: "center", vertical: "center" },
-      fill: metaFill
-    };
+  if (generatedRowIndex !== null) {
+    const generatedCell = worksheet[XLSX.utils.encode_cell({ r: generatedRowIndex, c: 0 })];
+    if (generatedCell) {
+      generatedCell.s = {
+        font: { sz: 9, color: { rgb: "475569" } },
+        alignment: { horizontal: "center", vertical: "center" },
+        fill: metaFill
+      };
+    }
   }
 
-  if (meta.length) {
-    const metaTitleRow = metaStartRow;
+  if (metaTitleRowIndex !== null) {
+    const metaTitleRow = metaTitleRowIndex;
     const metaTitleCell = worksheet[XLSX.utils.encode_cell({ r: metaTitleRow, c: 0 })];
     if (metaTitleCell) {
       metaTitleCell.s = {

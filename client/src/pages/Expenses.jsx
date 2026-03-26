@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.jsx";
@@ -11,24 +11,28 @@ import { useToast } from "../context/ToastContext.jsx";
 import { formatCurrency, formatDate } from "../utils/format.js";
 import { handleEnterToNext } from "../utils/enterToNext.js";
 import { useConfirm } from "../hooks/useConfirm.jsx";
+import { exportToExcel } from "../utils/exportExcel.js";
+import { exportToPdf } from "../utils/exportPdf.js";
 
 const categories = [
   { label: "Bus Expense", value: "BUS" },
   { label: "Room Expense", value: "ROOM" },
-  { label: "Jadwal Expense", value: "Jadwal" },
-  { label: "Ameer Expense", value: "Ameer" },
-  { label: "Administrative Expenses", value: "Administrative" },
+  { label: "Jadwal Expense", value: "TRAVEL" },
+  { label: "Ameer Expense", value: "GENERAL" },
+  { label: "Administrative Expenses", value: "ADMINISTRATIVE" },
   { label: "Other Expense", value: "OTHER" }
 ];
 
 function categoryLabel(value) {
+  if (value === "Jadwal") return "Jadwal Expense";
+  if (value === "Ameer") return "Ameer Expense";
+  if (value === "Administrative") return "Administrative Expenses";
   return categories.find((cat) => cat.value === value)?.label || value;
 }
 
 const sorters = {
   date: (a, b) => new Date(a.date) - new Date(b.date),
-  amount: (a, b) => a.amount - b.amount,
-  category: (a, b) => a.category.localeCompare(b.category)
+  amount: (a, b) => a.amount - b.amount
 };
 
 const toDateKey = (value) => {
@@ -36,6 +40,56 @@ const toDateKey = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString("en-CA");
+};
+
+const expenseCategoryBucket = (value) => {
+  const normalized = String(value || "").toUpperCase();
+  if (normalized === "BUS") return "Bus";
+  if (normalized === "ROOM") return "Room";
+  return "Miscellaneous";
+};
+
+const formatMonthLabel = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-GB", { month: "long", year: "numeric" });
+};
+
+const buildExpenseReport = (items) => {
+  const rows = [];
+  const boldRows = [];
+  const sortedItems = [...items].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const categoryOrder = ["Bus", "Room", "Miscellaneous"];
+  let serial = 1;
+  let grandTotal = 0;
+
+  categoryOrder.forEach((category) => {
+    const bucket = sortedItems.filter((item) => expenseCategoryBucket(item.category) === category);
+    if (!bucket.length) return;
+    rows.push(["", category.toUpperCase(), ""]);
+    boldRows.push(rows.length - 1);
+    let bucketTotal = 0;
+    bucket.forEach((expense) => {
+      const amount = Number(expense.amount || 0);
+      bucketTotal += amount;
+      grandTotal += amount;
+      rows.push([
+        serial++,
+        formatDate(expense.date),
+        amount
+      ]);
+    });
+    rows.push(["", `TOTAL ${category.toUpperCase()}`, bucketTotal]);
+    boldRows.push(rows.length - 1);
+    rows.push(["", "", ""]);
+  });
+
+  if (rows.length) {
+    rows.push(["", "TOTAL EXPENSE", grandTotal]);
+    boldRows.push(rows.length - 1);
+  }
+
+  return { rows, boldRows };
 };
 
 export default function Expenses() {
@@ -58,6 +112,7 @@ export default function Expenses() {
   const [sortDir, setSortDir] = useState("desc");
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [monthFilter, setMonthFilter] = useState("");
 
   const loadData = async () => {
     const [expenseData, tripData] = await Promise.all([
@@ -79,9 +134,13 @@ export default function Expenses() {
   const filtered = useMemo(() => {
     return expenses.filter((expense) => {
       const text = `${expense.description} ${expense.category}`.toLowerCase();
-      return text.includes(search.toLowerCase());
+      const searchMatch = text.includes(search.toLowerCase());
+      if (!searchMatch) return false;
+      if (!monthFilter) return true;
+      const monthKey = toDateKey(expense.date).slice(0, 7);
+      return monthKey === monthFilter;
     });
-  }, [expenses, search]);
+  }, [expenses, search, monthFilter]);
 
   const sorted = useMemo(() => {
     const items = [...filtered];
@@ -94,6 +153,24 @@ export default function Expenses() {
     if (!selectedDateKey) return trips;
     return trips.filter((trip) => toDateKey(trip.tripDate) === selectedDateKey);
   }, [trips, selectedDateKey]);
+
+  const monthOptions = useMemo(() => {
+    const monthMap = new Map();
+    expenses.forEach((expense) => {
+      const date = new Date(expense.date);
+      if (Number.isNaN(date.getTime())) return;
+      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      if (!monthMap.has(value)) {
+        monthMap.set(value, date);
+      }
+    });
+    return Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([value, date]) => ({
+        value,
+        label: date.toLocaleString("en-GB", { month: "long", year: "numeric" })
+      }));
+  }, [expenses]);
 
   useEffect(() => {
     if (!form.tripId || !selectedDateKey) return;
@@ -208,6 +285,45 @@ export default function Expenses() {
   };
 
   const canEdit = (expense) => user?.role === "ADMIN" || expense.createdById === user?.id;
+  const expenseReport = useMemo(() => buildExpenseReport(filtered), [filtered]);
+  const expenseTotals = useMemo(() => {
+    const totals = { Bus: 0, Room: 0, Miscellaneous: 0, total: 0 };
+    filtered.forEach((expense) => {
+      const amount = Number(expense.amount || 0);
+      const bucket = expenseCategoryBucket(expense.category);
+      totals[bucket] += amount;
+      totals.total += amount;
+    });
+    return totals;
+  }, [filtered]);
+  const groupedPaged = useMemo(() => {
+    const buckets = { Bus: [], Room: [], Miscellaneous: [] };
+    paged.forEach((expense) => {
+      const bucket = expenseCategoryBucket(expense.category);
+      buckets[bucket].push(expense);
+    });
+    return buckets;
+  }, [paged]);
+
+  const handleExportPdf = () => {
+    exportToPdf("EXPENSE REPORT", ["S.No", "Date", "Amount"], expenseReport.rows, {
+      headerTitle: "WADINOOR DAILY UMRAH SERVICE",
+      alignments: ["center", "left", "right"],
+      includeGenerated: false,
+      boldRows: expenseReport.boldRows
+    });
+  };
+
+  const handleExportExcel = () => {
+    exportToExcel("Expense-Report.xlsx", ["S.No", "Date", "Amount"], expenseReport.rows, {
+      headerTitle: "WADINOOR DAILY UMRAH SERVICE",
+      title: "EXPENSE REPORT",
+      alignments: ["center", "left", "right"],
+      columnWidths: [{ wch: 6 }, { wch: 18 }, { wch: 14 }],
+      includeGenerated: false,
+      boldRows: expenseReport.boldRows
+    });
+  };
 
   return (
     <div className="space-y-6">
@@ -217,7 +333,15 @@ export default function Expenses() {
           <h1 className="font-display text-3xl">Expenses</h1>
           <p className="text-sm text-sand-600">Track operational expenses across trips.</p>
         </div>
-        <Button onClick={openCreate}>Record Expense</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={handleExportPdf} disabled={!filtered.length}>
+            Export PDF
+          </Button>
+          <Button variant="outline" onClick={handleExportExcel} disabled={!filtered.length}>
+            Export Excel
+          </Button>
+          <Button onClick={openCreate}>Record Expense</Button>
+        </div>
       </div>
 
       <Modal open={isFormOpen} onClose={closeForm}>
@@ -283,13 +407,45 @@ export default function Expenses() {
         </CardHeader>
         <CardContent>
           <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Input
-              className="sm:max-w-xs"
-              placeholder="Search expenses"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <div className="flex flex-wrap gap-2">
+              <Input
+                className="sm:max-w-xs"
+                placeholder="Search expenses"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <Select
+                className="sm:max-w-xs"
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+              >
+                <option value="">All months</option>
+                {monthOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <p className="text-xs text-sand-600">Showing {filtered.length} expenses</p>
+          </div>
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-sand-200 bg-white px-4 py-3">
+              <p className="text-xs font-semibold text-sand-500">Bus</p>
+              <p className="text-lg font-semibold">{formatCurrency(expenseTotals.Bus)}</p>
+            </div>
+            <div className="rounded-xl border border-sand-200 bg-white px-4 py-3">
+              <p className="text-xs font-semibold text-sand-500">Room</p>
+              <p className="text-lg font-semibold">{formatCurrency(expenseTotals.Room)}</p>
+            </div>
+            <div className="rounded-xl border border-sand-200 bg-white px-4 py-3">
+              <p className="text-xs font-semibold text-sand-500">Miscellaneous</p>
+              <p className="text-lg font-semibold">{formatCurrency(expenseTotals.Miscellaneous)}</p>
+            </div>
+            <div className="rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
+              <p className="text-xs font-semibold text-sand-500">Total</p>
+              <p className="text-lg font-semibold">{formatCurrency(expenseTotals.total)}</p>
+            </div>
           </div>
 
           {selectedIds.length && user?.role === "ADMIN" ? (
@@ -306,40 +462,59 @@ export default function Expenses() {
                   <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
                 </TableHeaderCell>
                 <TableHeaderCell onClick={() => toggleSort("date")} className="sticky left-10 z-20 bg-sand-100 border-r border-sand-200 cursor-pointer">Date</TableHeaderCell>
-                <TableHeaderCell onClick={() => toggleSort("category")} className="cursor-pointer">Category</TableHeaderCell>
                 <TableHeaderCell>Description</TableHeaderCell>
                 <TableHeaderCell onClick={() => toggleSort("amount")} className="cursor-pointer">Amount</TableHeaderCell>
                 <TableHeaderCell>Actions</TableHeaderCell>
               </TableRow>
             </TableHead>
             <tbody>
-              {paged.map((expense) => (
-                <TableRow key={expense.id}>
-                  <TableCell className="sticky left-0 z-10 bg-white border-r border-sand-200 max-w-none">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(expense.id)}
-                      onChange={() => toggleSelect(expense.id)}
-                    />
-                  </TableCell>
-                  <TableCell className="sticky left-10 z-10 bg-white border-r border-sand-200">{formatDate(expense.date)}</TableCell>
-                  <TableCell>{categoryLabel(expense.category)}</TableCell>
-                  <TableCell title={expense.description}>{expense.description}</TableCell>
-                  <TableCell>{formatCurrency(expense.amount)}</TableCell>
-                  <TableCell className="max-w-none">
-                    {canEdit(expense) ? (
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="outline" onClick={() => handleEdit(expense)}>Edit</Button>
-                        {user?.role === "ADMIN" ? (
-                          <Button size="sm" variant="outline" onClick={() => handleDelete(expense)}>Delete</Button>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <span className="text-xs text-sand-500">No access</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
+              {["Bus", "Room", "Miscellaneous"].map((category) => {
+                const bucket = groupedPaged[category] || [];
+                if (!bucket.length) return null;
+                const bucketTotal = bucket.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+                return (
+                  <Fragment key={category}>
+                    <TableRow key={`${category}-header`} className="bg-sand-50">
+                      <TableCell colSpan={5} className="text-xs font-semibold text-sand-700">
+                        {category.toUpperCase()}
+                      </TableCell>
+                    </TableRow>
+                    {bucket.map((expense) => (
+                      <TableRow key={expense.id}>
+                        <TableCell className="sticky left-0 z-10 bg-white border-r border-sand-200 max-w-none">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(expense.id)}
+                            onChange={() => toggleSelect(expense.id)}
+                          />
+                        </TableCell>
+                        <TableCell className="sticky left-10 z-10 bg-white border-r border-sand-200">{formatDate(expense.date)}</TableCell>
+                        <TableCell title={expense.description}>{expense.description}</TableCell>
+                        <TableCell>{formatCurrency(expense.amount)}</TableCell>
+                        <TableCell className="max-w-none">
+                          {canEdit(expense) ? (
+                            <div className="flex gap-2">
+                              <Button size="sm" variant="outline" onClick={() => handleEdit(expense)}>Edit</Button>
+                              {user?.role === "ADMIN" ? (
+                                <Button size="sm" variant="outline" onClick={() => handleDelete(expense)}>Delete</Button>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-sand-500">No access</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow key={`${category}-total`} className="bg-sand-50">
+                      <TableCell colSpan={3} className="text-right text-xs font-semibold text-sand-700">
+                        TOTAL {category.toUpperCase()}
+                      </TableCell>
+                      <TableCell className="text-sm font-semibold">{formatCurrency(bucketTotal)}</TableCell>
+                      <TableCell />
+                    </TableRow>
+                  </Fragment>
+                );
+              })}
             </tbody>
           </Table>
           <div className="mt-4 flex items-center gap-2">
@@ -368,13 +543,6 @@ export default function Expenses() {
     </div>
   );
 }
-
-
-
-
-
-
-
 
 
 
