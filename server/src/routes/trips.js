@@ -39,9 +39,16 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
     _sum: { familyCount: true }
   });
   const countMap = new Map(counts.map((row) => [row.tripId, row._sum.familyCount || 0]));
+  const payments = await prisma.traveler.groupBy({
+    by: ["tripId"],
+    where: { tripId: { in: tripIds }, status: "ACTIVE" },
+    _sum: { amountPaid: true }
+  });
+  const paymentMap = new Map(payments.map((row) => [row.tripId, row._sum.amountPaid || 0]));
   const withCounts = trips.map((trip) => ({
     ...trip,
-    travelerCount: countMap.get(trip.id) || 0
+    travelerCount: countMap.get(trip.id) || 0,
+    totalPaid: paymentMap.get(trip.id) || 0
   }));
 
   return res.json(withCounts);

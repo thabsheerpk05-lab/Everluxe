@@ -51,7 +51,6 @@ export default function Trips() {
   const [ameers, setAmeers] = useState([]);
   const [buses, setBuses] = useState([]);
   const [trips, setTrips] = useState([]);
-  const [collections, setCollections] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [search, setSearch] = useState("");
   const [dateFilter, setDateFilter] = useState("");
@@ -62,7 +61,6 @@ export default function Trips() {
   const [editingId, setEditingId] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [isTripOpen, setIsTripOpen] = useState(false);
-  const [isCollectionOpen, setIsCollectionOpen] = useState(false);
   const [isFinishOpen, setIsFinishOpen] = useState(false);
   const [finishTrip, setFinishTrip] = useState(null);
   const [form, setForm] = useState({
@@ -75,13 +73,6 @@ export default function Trips() {
     ameerId: "",
     busId: ""
   });
-  const [collectionForm, setCollectionForm] = useState({
-    tripId: "",
-    ameerId: "",
-    amountReceived: "",
-    date: ""
-  });
-
   const loadData = async () => {
     const tasks = [
       apiFetch("/packages"),
@@ -89,17 +80,15 @@ export default function Trips() {
       apiFetch("/drivers"),
       apiFetch("/ameers"),
       user?.role === "ADMIN" ? apiFetch("/buses") : Promise.resolve([]),
-      user?.role === "ADMIN" ? apiFetch("/collections") : Promise.resolve([]),
       canViewExpenses ? apiFetch("/expenses") : Promise.resolve([])
     ];
     const results = await Promise.all(tasks);
-    const [pkgData, tripData, driverData, ameerData, busData, collectionData, expenseData] = results;
+    const [pkgData, tripData, driverData, ameerData, busData, expenseData] = results;
     setPackages(pkgData || []);
     setTrips(tripData || []);
     setDrivers(driverData || []);
     setAmeers(ameerData || []);
     setBuses(busData || []);
-    setCollections(collectionData || []);
     setExpenses(expenseData || []);
   };
 
@@ -147,11 +136,11 @@ export default function Trips() {
 
   const collectionTotals = useMemo(() => {
     const map = new Map();
-    collections.forEach((item) => {
-      map.set(item.tripId, (map.get(item.tripId) || 0) + Number(item.amountReceived || 0));
+    trips.forEach((trip) => {
+      map.set(trip.id, Number(trip.totalPaid || 0));
     });
     return map;
-  }, [collections]);
+  }, [trips]);
 
   const expenseTotals = useMemo(() => {
     const map = new Map();
@@ -173,10 +162,6 @@ export default function Trips() {
       ameerId: "",
       busId: ""
     });
-  };
-
-  const resetCollectionForm = () => {
-    setCollectionForm({ tripId: "", ameerId: "", amountReceived: "", date: "" });
   };
 
   const handleSubmit = async (event) => {
@@ -291,40 +276,6 @@ export default function Trips() {
       const pageIds = paged.map((item) => item.id);
       setSelectedIds((prev) => Array.from(new Set([...prev, ...pageIds])));
     }
-  };
-
-  const handleCollectionTripChange = (value) => {
-    const trip = trips.find((item) => String(item.id) === String(value));
-    setCollectionForm((prev) => ({
-      ...prev,
-      tripId: value,
-      ameerId: trip?.ameerId ? String(trip.ameerId) : ""
-    }));
-  };
-
-  const handleCollectionSubmit = async (event) => {
-    event.preventDefault();
-    try {
-      await apiFetch("/collections", {
-        method: "POST",
-        body: JSON.stringify(collectionForm)
-      });
-      resetCollectionForm();
-      toast({ title: "Collection recorded.", variant: "success" });
-      await loadData();
-    } catch (err) {
-      toast({ title: err.message, variant: "error" });
-    }
-  };
-
-  const openCollection = () => {
-    resetCollectionForm();
-    setIsCollectionOpen(true);
-  };
-
-  const closeCollection = () => {
-    setIsCollectionOpen(false);
-    resetCollectionForm();
   };
 
   const toggleSort = (key) => {
@@ -633,7 +584,6 @@ export default function Trips() {
     </div>
   );
 }
-
 
 
 
