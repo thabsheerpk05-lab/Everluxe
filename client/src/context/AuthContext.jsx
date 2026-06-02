@@ -8,10 +8,25 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const savedUser = localStorage.getItem('user');
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
+    const savedToken = localStorage.getItem('token');
+    if (savedUser && savedToken) {
+      try {
+        setUser(JSON.parse(savedUser));
+      } catch (error) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+      }
+    } else {
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
     }
     setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const handleUnauthorized = () => setUser(null);
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
   }, []);
 
   const login = (userData, token) => {

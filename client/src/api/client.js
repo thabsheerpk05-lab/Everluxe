@@ -17,6 +17,11 @@ export async function apiFetch(path, options = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: "Request failed" }));
+    if (response.status === 401) {
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
+      window.dispatchEvent(new Event("auth:unauthorized"));
+    }
     throw new Error(error.message || "Request failed");
   }
 

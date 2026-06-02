@@ -57,12 +57,12 @@ async function main() {
 
   const wadinoor = await prisma.serviceProvider.upsert({
     where: { id: 1 },
-    update: { providerName: "Wadinoor" },
-    create: { providerName: "Wadinoor" }
+    update: { providerName: "Wadinoor", isMain: true },
+    create: { providerName: "Wadinoor", isMain: true }
   });
 
   const otherProvider = await prisma.serviceProvider.create({
-    data: { providerName: "Al Noor Travels" }
+    data: { providerName: "Al Noor Travels", isMain: false }
   });
 
   const driver1 = await prisma.driver.create({
@@ -155,6 +155,7 @@ async function main() {
         finalAmount: 1600,
         status: "ACTIVE",
         serviceProviderId: otherProvider.id,
+        serviceDirection: "INBOUND",
         createdById: staff.id
       },
       {

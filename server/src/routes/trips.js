@@ -56,20 +56,20 @@ router.get("/", authenticate, asyncHandler(async (req, res) => {
 
 router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const { packageId, tripDate, seasonalPrice, notes, driverId, coDriverId, ameerId, busId } = req.body || {};
-  if (!packageId || !tripDate || !seasonalPrice || !driverId || !ameerId || !busId) {
-    return res.status(400).json({ message: "Package, trip date, price, driver, ameer, and bus are required" });
+  if (!packageId || !tripDate) {
+    return res.status(400).json({ message: "Package and trip date are required" });
   }
 
   const created = await prisma.trip.create({
     data: {
       packageId: Number(packageId),
       tripDate: new Date(tripDate),
-      seasonalPrice: Number(seasonalPrice),
+      seasonalPrice: Number(seasonalPrice || 0),
       notes: notes || null,
-      driverId: Number(driverId),
+      driverId: driverId ? Number(driverId) : null,
       coDriverId: coDriverId ? Number(coDriverId) : null,
-      ameerId: Number(ameerId),
-      busId: Number(busId),
+      ameerId: ameerId ? Number(ameerId) : null,
+      busId: busId ? Number(busId) : null,
       createdById: req.user.id
     },
     include: { package: true, driver: true, coDriver: true, ameer: true, bus: true }
@@ -81,8 +81,8 @@ router.post("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
 router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const { packageId, tripDate, seasonalPrice, notes, driverId, coDriverId, ameerId, busId, status } = req.body || {};
-  if (!packageId || !tripDate || !seasonalPrice || !driverId || !ameerId || !busId) {
-    return res.status(400).json({ message: "Package, trip date, price, driver, ameer, and bus are required" });
+  if (!packageId || !tripDate) {
+    return res.status(400).json({ message: "Package and trip date are required" });
   }
   if (status && !allowedStatuses.includes(status)) {
     return res.status(400).json({ message: "Invalid trip status" });
@@ -93,12 +93,12 @@ router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => 
     data: {
       packageId: Number(packageId),
       tripDate: new Date(tripDate),
-      seasonalPrice: Number(seasonalPrice),
+      seasonalPrice: Number(seasonalPrice || 0),
       notes: notes || null,
-      driverId: Number(driverId),
+      driverId: driverId ? Number(driverId) : null,
       coDriverId: coDriverId ? Number(coDriverId) : null,
-      ameerId: Number(ameerId),
-      busId: Number(busId),
+      ameerId: ameerId ? Number(ameerId) : null,
+      busId: busId ? Number(busId) : null,
       status: status || undefined
     },
     include: { package: true, driver: true, coDriver: true, ameer: true, bus: true }

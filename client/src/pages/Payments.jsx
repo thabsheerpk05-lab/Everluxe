@@ -44,6 +44,11 @@ const calcFinalAmount = (traveler) => {
   const base = custom || Number(traveler.trip?.seasonalPrice || 0);
   return Math.max(base * count + Number(traveler.extraRoomCharge || 0), 0);
 };
+
+const formatTravelerType = (type) => {
+  if (!type) return "";
+  return String(type).toLowerCase().replace(/^\w/, (char) => char.toUpperCase());
+};
 export default function Payments() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -370,7 +375,7 @@ export default function Payments() {
                 {selected.travelerType === "FAMILY" ? (
                   <div>Family Members: {selected.familyCount || 1}</div>
                 ) : (
-                  <div>Bachelor</div>
+                  <div>{formatTravelerType(selected.travelerType)}</div>
                 )}
               </div>
               {selected.travelerType === "FAMILY" && selectedFamilyMembers.length ? (
