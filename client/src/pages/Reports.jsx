@@ -5,9 +5,9 @@ import { Button } from "../components/ui/button.jsx";
 import { Select } from "../components/ui/select.jsx";
 import { Input } from "../components/ui/input.jsx";
 import { Table, TableHead, TableRow, TableHeaderCell, TableCell } from "../components/ui/table.jsx";
-import { formatDate } from "../utils/format.js";
+import { formatCurrency, formatDate } from "../utils/format.js";
 import { exportToExcel } from "../utils/exportExcel.js";
-import { exportToPdf } from "../utils/exportPdf.js";
+import { exportListExpenseIncomePdf, exportToPdf } from "../utils/exportPdf.js";
 
 const reportTypes = [
   { label: "LIST", value: "LIST" },
@@ -15,15 +15,154 @@ const reportTypes = [
   { label: "KASHF", value: "KASHF" }
 ];
 
-function buildReport(type, passengers) {
-  const safe = (value) => (value === null || value === undefined || value === "" ? "-" : value);
-  const sorted = [...passengers].sort((a, b) => {
-    const aDate = a.tripDate ? new Date(a.tripDate).getTime() : 0;
-    const bDate = b.tripDate ? new Date(b.tripDate).getTime() : 0;
-    if (aDate !== bDate) return aDate - bDate;
-    return (a.serial ?? 0) - (b.serial ?? 0);
+const expenseCategories = [
+  { label: "Bus Expense", value: "BUS" },
+  { label: "Room Expense", value: "ROOM" },
+  { label: "Jadwal Expense", value: "TRAVEL" },
+  { label: "Ameer Expense", value: "GENERAL" },
+  { label: "Administrative Expenses", value: "ADMINISTRATIVE" },
+  { label: "Miscellaneous Expense", value: "MISCELLANEOUS" }
+];
+
+function expenseCategoryLabel(value) {
+  if (value === "Jadwal") return "Jadwal Expense";
+  if (value === "Ameer") return "Ameer Expense";
+  if (value === "Administrative") return "Administrative Expenses";
+  if (value === "OTHER") return "Miscellaneous Expense";
+  return expenseCategories.find((cat) => cat.value === value)?.label || value || "-";
+}
+
+function buildExpenseReport(items) {
+  const rows = [];
+  const boldRows = [];
+  const sortedItems = [...items].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const categoryOrder = [
+    "BUS",
+    "ROOM",
+    "TRAVEL",
+    "GENERAL",
+    "ADMINISTRATIVE",
+    "MISCELLANEOUS",
+    "OTHER"
+  ];
+  const categories = Array.from(new Set([
+    ...categoryOrder,
+    ...sortedItems.map((item) => item.category || "OTHER")
+  ]));
+  let serial = 1;
+  let grandTotal = 0;
+
+  categories.forEach((category) => {
+    const bucket = sortedItems.filter((item) => String(item.category || "OTHER") === String(category));
+    if (!bucket.length) return;
+    rows.push(["", expenseCategoryLabel(category).toUpperCase(), "", "", "", ""]);
+    boldRows.push(rows.length - 1);
+    let bucketTotal = 0;
+    bucket.forEach((expense) => {
+      const amount = Number(expense.amount || 0);
+      bucketTotal += amount;
+      grandTotal += amount;
+      rows.push([
+        serial++,
+        formatDate(expense.date),
+        expenseCategoryLabel(expense.category),
+        expense.description || "-",
+        expense.serviceProvider?.providerName || "-",
+        amount
+      ]);
+    });
+    rows.push(["", `TOTAL ${expenseCategoryLabel(category).toUpperCase()}`, "", "", "", bucketTotal]);
+    boldRows.push(rows.length - 1);
+    rows.push(["", "", "", "", "", ""]);
   });
 
+  rows.push(["", "TOTAL EXPENSE", "", "", "", grandTotal]);
+  boldRows.push(rows.length - 1);
+
+  return {
+    headers: ["S.No", "Date", "Category", "Description", "Service Provider", "Amount"],
+    rows,
+    boldRows,
+    total: grandTotal
+  };
+}
+
+function formatCompactPdfDate(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw === "-") return raw || "-";
+  const months = {
+    Jan: "01",
+    Feb: "02",
+    Mar: "03",
+    Apr: "04",
+    May: "05",
+    Jun: "06",
+    Jul: "07",
+    Aug: "08",
+    Sep: "09",
+    Oct: "10",
+    Nov: "11",
+    Dec: "12"
+  };
+  const match = raw.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if (match && months[match[2]]) {
+    return `${match[1].padStart(2, "0")}/${months[match[2]]}/${match[3].slice(-2)}`;
+  }
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${String(date.getFullYear()).slice(-2)}`;
+}
+
+function compactPassengerPdfReport(report) {
+  const headerMap = {
+    "S.No": "No",
+    "Travel Date": "Date",
+    "Passport/Iqama": "ID",
+    "Payment Amount": "Amt",
+    "Service Provider": "Provider",
+    Direction: "Dir"
+  };
+
+  return {
+    headers: report.headers.map((header) => headerMap[header] || header),
+    rows: report.rows.map((row) => row.map((cell, idx) => (idx === 1 ? formatCompactPdfDate(cell) : cell))),
+    alignments: ["center", "center", "left", "left", "left", "left", "right", "left", "center"],
+    pdfOptions: {
+      fontSize: 6.8,
+      headFontSize: 7.2,
+      cellPadding: 3,
+      headCellPadding: 4,
+      overflow: "ellipsize",
+      columnStyles: {
+        0: { cellWidth: 24 },
+        1: { cellWidth: 42 },
+        2: { cellWidth: 82 },
+        3: { cellWidth: 64 },
+        4: { cellWidth: 52 },
+        5: { cellWidth: 58 },
+        6: { cellWidth: 42 },
+        7: { cellWidth: 78 },
+        8: { cellWidth: 38 }
+      }
+    }
+  };
+}
+
+function buildReport(type, passengers) {
+  const safe = (value) => (value === null || value === undefined || value === "" ? "-" : value);
+  const serviceOrder = (passenger) => {
+    if (!passenger.serviceProviderName || passenger.serviceProviderIsMain) return 0;
+    const direction = String(passenger.serviceDirection || "").toUpperCase();
+    if (direction === "INBOUND") return 1;
+    if (direction === "OUTBOUND") return 2;
+    return 3;
+  };
+  const serviceLabel = (passenger) => (
+    passenger.serviceProviderName && !passenger.serviceProviderIsMain ? safe(passenger.serviceDirection) : "-"
+  );
   if (type === "BUSLIST") {
     const parseMembers = (value) => {
       if (!value) return [];
@@ -204,12 +343,16 @@ function buildReport(type, passengers) {
     };
   }
   return {
-    headers: ["S.No", "Travel Date", "Name", "Passport/Iqama", "Type", "Phone", "Payment Amount", "Service Provider"],
+    headers: ["S.No", "Travel Date", "Name", "Passport/Iqama", "Type", "Phone", "Payment Amount", "Service Provider", "Direction"],
     rows: (() => {
       const sortedByMonth = [...passengers].sort((a, b) => {
         const aDate = a.tripDate ? new Date(a.tripDate).getTime() : 0;
         const bDate = b.tripDate ? new Date(b.tripDate).getTime() : 0;
         if (aDate !== bDate) return aDate - bDate;
+        const providerDiff = serviceOrder(a) - serviceOrder(b);
+        if (providerDiff !== 0) return providerDiff;
+        const providerNameDiff = String(a.serviceProviderName || "").localeCompare(String(b.serviceProviderName || ""));
+        if (providerNameDiff !== 0) return providerNameDiff;
         const aType = String(a.travelerType || "").toLowerCase();
         const bType = String(b.travelerType || "").toLowerCase();
         const typeOrder = (type) => (type === "family" ? 0 : type === "bachelor" ? 1 : 2);
@@ -246,7 +389,8 @@ function buildReport(type, passengers) {
           typeLabel,
           safe(p.phoneNumber),
           safe(amountValue),
-          safe(p.serviceProviderName)
+          safe(p.serviceProviderName),
+          serviceLabel(p)
         ]);
 
         if (isFamily && members.length) {
@@ -259,7 +403,8 @@ function buildReport(type, passengers) {
               "MEMBER",
               "",
               "",
-              safe(p.serviceProviderName)
+              safe(p.serviceProviderName),
+              serviceLabel(p)
             ]);
           });
         }
@@ -287,6 +432,7 @@ function passengerColumnWidths(headers) {
     if (key.includes("passport")) return { wch: 18 };
     if (key.includes("status")) return { wch: 16 };
     if (key.includes("provider")) return { wch: 20 };
+    if (key.includes("direction")) return { wch: 14 };
     if (key.includes("payment")) return { wch: 16 };
     return { wch: 28 };
   });
@@ -296,10 +442,19 @@ export default function Reports() {
   const [trips, setTrips] = useState([]);
   const [providers, setProviders] = useState([]);
   const [tripId, setTripId] = useState("");
-  const [month, setMonth] = useState("");
   const [type, setType] = useState("LIST");
   const [passengers, setPassengers] = useState([]);
   const [tripMeta, setTripMeta] = useState(null);
+  const currentYear = new Date().getFullYear();
+  const [listFilters, setListFilters] = useState({
+    year: currentYear,
+    month: "ALL",
+    dateFrom: "",
+    dateTo: ""
+  });
+  const [reportSummary, setReportSummary] = useState(null);
+  const [financial, setFinancial] = useState(null);
+  const [expenses, setExpenses] = useState([]);
   const [unpaidFilters, setUnpaidFilters] = useState({
     tripId: "",
     dateFrom: "",
@@ -307,6 +462,7 @@ export default function Reports() {
     serviceProviderId: ""
   });
   const [unpaidReport, setUnpaidReport] = useState({ totalUnpaid: 0, travelers: [] });
+  const usesListFilters = type === "LIST";
 
   useEffect(() => {
     const loadTrips = async () => {
@@ -320,38 +476,80 @@ export default function Reports() {
     loadTrips();
   }, []);
 
-  const months = useMemo(() => {
-    const monthMap = new Map();
+  const yearOptions = useMemo(() => {
+    const years = new Set([currentYear - 1, currentYear, currentYear + 1]);
     trips.forEach((trip) => {
       if (!trip.tripDate) return;
-      const date = new Date(trip.tripDate);
-      if (Number.isNaN(date.getTime())) return;
-      const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-      if (!monthMap.has(value)) {
-        monthMap.set(value, date);
-      }
+      const tripYear = new Date(trip.tripDate).getFullYear();
+      if (!Number.isNaN(tripYear)) years.add(tripYear);
     });
-    return Array.from(monthMap.entries())
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([value, date]) => ({
-        value,
-        label: date.toLocaleString("en-GB", { month: "long", year: "numeric" })
-      }));
+    return Array.from(years).sort((a, b) => b - a);
   }, [trips]);
+
+  const monthOptions = useMemo(() => [
+    { label: "All months", value: "ALL" },
+    ...Array.from({ length: 12 }, (_, idx) => ({
+      label: new Date(listFilters.year, idx, 1).toLocaleString("en-GB", { month: "long" }),
+      value: String(idx)
+    }))
+  ], [listFilters.year]);
+
+  const financialRows = useMemo(() => {
+    if (!financial) return [];
+    return financial.monthly
+      .map((row, index) => ({ ...row, index }))
+      .filter((row) => {
+        if (listFilters.month !== "ALL") return String(row.index) === String(listFilters.month);
+        if (!listFilters.dateFrom && !listFilters.dateTo) return true;
+
+        const rangeStart = listFilters.dateFrom
+          ? new Date(listFilters.dateFrom)
+          : new Date(financial.year, 0, 1);
+        const rangeEnd = listFilters.dateTo
+          ? new Date(listFilters.dateTo)
+          : new Date(financial.year, 11, 31);
+        rangeStart.setHours(0, 0, 0, 0);
+        rangeEnd.setHours(23, 59, 59, 999);
+
+        const monthStart = new Date(financial.year, row.index, 1);
+        const monthEnd = new Date(financial.year, row.index + 1, 0, 23, 59, 59, 999);
+        return monthEnd >= rangeStart && monthStart <= rangeEnd;
+      });
+  }, [financial, listFilters.dateFrom, listFilters.dateTo, listFilters.month]);
+
+  const financialTotals = useMemo(() => financialRows.reduce((totals, row) => ({
+    revenue: totals.revenue + Number(row.revenue || 0),
+    expenses: totals.expenses + Number(row.expenses || 0),
+    profit: totals.profit + Number(row.profit || 0)
+  }), { revenue: 0, expenses: 0, profit: 0 }), [financialRows]);
 
   
   const handleGenerate = async () => {
-    if (type === "LIST") {
-      if (!month) return;
-      const data = await apiFetch(`/reports/travelers?month=${month}`);
-      setPassengers(data.passengers);
+    if (usesListFilters) {
+      const params = new URLSearchParams();
+      params.append("year", String(listFilters.year));
+      params.append("month", listFilters.month);
+      if (listFilters.dateFrom) params.append("dateFrom", listFilters.dateFrom);
+      if (listFilters.dateTo) params.append("dateTo", listFilters.dateTo);
+      const [travelerData, expenseData, financialData] = await Promise.all([
+        apiFetch(`/reports/travelers?${params.toString()}`),
+        apiFetch(`/reports/expenses?${params.toString()}`),
+        apiFetch(`/reports/financial?${params.toString()}`)
+      ]);
+      setPassengers(travelerData.passengers);
       setTripMeta(null);
+      setReportSummary(travelerData);
+      setExpenses(expenseData.expenses || []);
+      setFinancial(financialData);
       return;
     }
     if (!tripId) return;
     const data = await apiFetch(`/reports/trip/${tripId}`);
     setPassengers(data.passengers);
     setTripMeta(data.tripMeta);
+    setReportSummary(null);
+    setFinancial(null);
+    setExpenses([]);
   };
 
   const handleUnpaid = async () => {
@@ -366,7 +564,10 @@ export default function Reports() {
   };
 
   const report = useMemo(() => buildReport(type, passengers), [type, passengers]);
-  const reportTitle = type === "BUSLIST" ? "BUS LIST" : type;
+  const expenseReport = useMemo(() => buildExpenseReport(expenses), [expenses]);
+  const reportTitle = type === "BUSLIST"
+    ? "BUS LIST"
+    : type;
 
   const safeText = (value) => (value === null || value === undefined || value === "" ? "-" : value);
   const personLine = (label, name, iqama) => `${label}: ${safeText(name)} | Iqama: ${safeText(iqama)}`;
@@ -387,14 +588,32 @@ export default function Reports() {
           `Driver/Ameer Name: ${safeText(tripMeta.driverName)} / ${safeText(tripMeta.ameerName)}`
         ]
     : [];
+  const listMeta = usesListFilters && reportSummary
+    ? [
+        `Year: ${reportSummary.year}`,
+        `Month: ${
+          reportSummary.month === "ALL"
+            ? "All months"
+            : new Date(reportSummary.year, Number(reportSummary.month), 1).toLocaleString("en-GB", { month: "long" })
+        }`,
+        `Date From: ${reportSummary.dateFrom ? formatDate(reportSummary.dateFrom) : "-"}`,
+        `Date To: ${reportSummary.dateTo ? formatDate(reportSummary.dateTo) : "-"}`,
+        `Total Revenue: ${formatCurrency(reportSummary.totalRevenue || 0)}`
+      ]
+    : [];
+  const activeMeta = usesListFilters ? listMeta : reportMeta;
 
   const handleExportPdf = () => {
+    if (type === "LIST") {
+      handleListPdf();
+      return;
+    }
     exportToPdf(`${reportTitle} REPORT`, report.headers, report.rows, {
       headerTitle: "WADINOOR DAILY UMRAH SERVICE",
-      meta: reportMeta,
+      meta: activeMeta,
       alignments: columnAlignments(report.headers),
       includeGenerated: false,
-      includeMeta: type !== "LIST"
+      includeMeta: activeMeta.length > 0
     });
   };
 
@@ -402,14 +621,107 @@ export default function Reports() {
     exportToExcel(`${reportTitle}-Report.xlsx`, report.headers, report.rows, {
       headerTitle: "WADINOOR DAILY UMRAH SERVICE",
       title: `${reportTitle} REPORT`,
-      meta: reportMeta,
+      meta: activeMeta,
       alignments: columnAlignments(report.headers),
       columnWidths: passengerColumnWidths(report.headers),
       includeGenerated: false,
-      includeMeta: type !== "LIST"
+      includeMeta: activeMeta.length > 0
     });
   };
 
+  const formatStatementMonthLabel = (yearValue, monthIndex) => {
+    const monthName = new Date(yearValue, monthIndex, 1).toLocaleString("en-GB", { month: "short" });
+    return `${monthName}-${String(yearValue).slice(-2)}`;
+  };
+
+  const selectedStatementMonths = (monthValue = listFilters.month) => {
+    if (!financial) return [];
+    const months = financial.monthly.map((row, idx) => {
+      const monthStart = new Date(financial.year, idx, 1);
+      const monthEnd = new Date(financial.year, idx + 1, 0);
+      const rangeStart = listFilters.dateFrom ? new Date(listFilters.dateFrom) : monthStart;
+      const rangeEnd = listFilters.dateTo ? new Date(listFilters.dateTo) : monthEnd;
+      return {
+        year: financial.year,
+        monthIndex: idx,
+        revenue: row.revenue,
+        expenses: row.expenses,
+        profit: row.profit,
+        internalRevenue: row.internalRevenue,
+        externalRevenue: row.externalRevenue,
+        expenseByCategory: row.expenseByCategory,
+        periodStart: new Date(Math.max(monthStart.getTime(), rangeStart.getTime())),
+        periodEnd: new Date(Math.min(monthEnd.getTime(), rangeEnd.getTime()))
+      };
+    });
+    const selected = monthValue === "ALL"
+      ? months
+      : months.filter((_, idx) => String(idx) === String(monthValue));
+    if (monthValue !== "ALL" || (!listFilters.dateFrom && !listFilters.dateTo)) {
+      return selected;
+    }
+
+    const rangeStart = listFilters.dateFrom
+      ? new Date(listFilters.dateFrom)
+      : new Date(financial.year, 0, 1);
+    const rangeEnd = listFilters.dateTo
+      ? new Date(listFilters.dateTo)
+      : new Date(financial.year, 11, 31);
+    rangeStart.setHours(0, 0, 0, 0);
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    return selected.filter((month) => {
+      const monthStart = new Date(month.year, month.monthIndex, 1);
+      const monthEnd = new Date(month.year, month.monthIndex + 1, 0, 23, 59, 59, 999);
+      return monthEnd >= rangeStart && monthStart <= rangeEnd;
+    });
+  };
+
+  const financialSuffix = (yearValue = listFilters.year, monthValue = listFilters.month) => (
+    monthValue === "ALL"
+      ? String(yearValue)
+      : `${yearValue}-${formatStatementMonthLabel(yearValue, Number(monthValue))}`
+  );
+
+  const handleListPdf = () => {
+    const compactPassengerReport = compactPassengerPdfReport(report);
+    exportListExpenseIncomePdf(
+      `List-Expense-Income-${financialSuffix()}.pdf`,
+      {
+        title: "PASSENGER LIST REPORT",
+        headers: compactPassengerReport.headers,
+        rows: compactPassengerReport.rows,
+        meta: activeMeta,
+        alignments: compactPassengerReport.alignments,
+        pdfOptions: compactPassengerReport.pdfOptions
+      },
+      {
+        title: "EXPENSE REPORT",
+        headers: expenseReport.headers,
+        rows: expenseReport.rows,
+        meta: [
+          ...activeMeta,
+          `Total Expense: ${formatCurrency(expenseReport.total || 0)}`
+        ],
+        alignments: ["center", "left", "left", "left", "left", "right"],
+        boldRows: expenseReport.boldRows
+      },
+      selectedStatementMonths(),
+      {
+        passengerHeaderTitle: "WADINOOR DAILY UMRAH SERVICE",
+        expenseHeaderTitle: "WADINOOR DAILY UMRAH SERVICE",
+        statementHeaderTitle: "WADINOOR",
+        statementTitle: "PROFIT AND LOSS A/C",
+        includeGenerated: false
+      }
+    );
+  };
+
+  const needsTrip = type === "BUSLIST" || type === "KASHF";
+  const canGenerate = needsTrip ? Boolean(tripId) : true;
+  const canExport = type === "LIST"
+    ? passengers.length > 0 && financialRows.length > 0
+    : passengers.length > 0;
 
   return (
     <div className="space-y-6">
@@ -420,22 +732,71 @@ export default function Reports() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Passenger Reports</CardTitle>
+          <CardTitle>Reports</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-            {type === "LIST" ? (
-              <div>
-                <label className="text-xs font-semibold text-sand-600">Month</label>
-                <Select value={month} onChange={(e) => setMonth(e.target.value)}>
-                  <option value="">Select month</option>
-                  {months.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </Select>
-              </div>
+            <div>
+              <label className="text-xs font-semibold text-sand-600">Report Type</label>
+              <Select
+                value={type}
+                onChange={(e) => {
+                  setType(e.target.value);
+                  setPassengers([]);
+                  setTripMeta(null);
+                  setReportSummary(null);
+                  setFinancial(null);
+                  setExpenses([]);
+                }}
+              >
+                {reportTypes.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            {usesListFilters ? (
+              <>
+                <div>
+                  <label className="text-xs font-semibold text-sand-600">Year</label>
+                  <Select
+                    value={listFilters.year}
+                    onChange={(e) => setListFilters((prev) => ({ ...prev, year: Number(e.target.value) }))}
+                  >
+                    {yearOptions.map((yearOption) => (
+                      <option key={yearOption} value={yearOption}>{yearOption}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-sand-600">Month</label>
+                  <Select
+                    value={listFilters.month}
+                    onChange={(e) => setListFilters((prev) => ({ ...prev, month: e.target.value }))}
+                  >
+                    {monthOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-sand-600">Date From</label>
+                  <Input
+                    type="date"
+                    value={listFilters.dateFrom}
+                    onChange={(e) => setListFilters((prev) => ({ ...prev, dateFrom: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-sand-600">Date To</label>
+                  <Input
+                    type="date"
+                    value={listFilters.dateTo}
+                    onChange={(e) => setListFilters((prev) => ({ ...prev, dateTo: e.target.value }))}
+                  />
+                </div>
+              </>
             ) : (
               <div>
                 <label className="text-xs font-semibold text-sand-600">Trip</label>
@@ -449,28 +810,116 @@ export default function Reports() {
                 </Select>
               </div>
             )}
-            <div>
-              <label className="text-xs font-semibold text-sand-600">Report Type</label>
-              <Select value={type} onChange={(e) => setType(e.target.value)}>
-                {reportTypes.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
             <div className="flex flex-wrap items-end gap-2 md:col-span-2 lg:col-span-1 lg:justify-end">
-              <Button onClick={handleGenerate} disabled={type === "LIST" ? !month : !tripId}>
+              <Button onClick={handleGenerate} disabled={!canGenerate}>
                 Generate
               </Button>
-              <Button variant="outline" onClick={handleExportPdf} disabled={!passengers.length}>
-                Export PDF
+              <Button variant="outline" onClick={handleExportPdf} disabled={!canExport}>
+                {type === "LIST" ? "Export Full PDF" : "Export PDF"}
               </Button>
-              <Button variant="outline" onClick={handleExportExcel} disabled={!passengers.length}>
+              <Button variant="outline" onClick={handleExportExcel} disabled={!canExport}>
                 Export Excel
               </Button>
             </div>
           </div>
+
+          {usesListFilters && reportSummary ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-sand-200 bg-white px-4 py-3">
+                <p className="text-xs font-semibold text-sand-500">Passengers</p>
+                <p className="text-lg font-semibold">{passengers.length}</p>
+              </div>
+              <div className="rounded-xl border border-sand-200 bg-white px-4 py-3">
+                <p className="text-xs font-semibold text-sand-500">Revenue Total</p>
+                <p className="text-lg font-semibold">{formatCurrency(reportSummary.totalRevenue || 0)}</p>
+              </div>
+              <div className="rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
+                <p className="text-xs font-semibold text-sand-500">Period</p>
+                <p className="text-sm font-semibold">
+                  {listMeta.slice(0, 4).map((item) => item.split(": ").slice(1).join(": ")).join(" | ")}
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          {type === "LIST" && financial ? (
+            <>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-sand-200 bg-white px-4 py-3">
+                  <p className="text-xs font-semibold text-sand-500">Revenue Total</p>
+                  <p className="text-lg font-semibold">{formatCurrency(financialTotals.revenue)}</p>
+                </div>
+                <div className="rounded-xl border border-sand-200 bg-white px-4 py-3">
+                  <p className="text-xs font-semibold text-sand-500">Expense Total</p>
+                  <p className="text-lg font-semibold">{formatCurrency(financialTotals.expenses)}</p>
+                </div>
+                <div className="rounded-xl border border-sand-200 bg-sand-50 px-4 py-3">
+                  <p className="text-xs font-semibold text-sand-500">Net Profit / Loss</p>
+                  <p className="text-lg font-semibold">{formatCurrency(financialTotals.profit)}</p>
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableHeaderCell>Month</TableHeaderCell>
+                      <TableHeaderCell>Revenue</TableHeaderCell>
+                      <TableHeaderCell>Expense</TableHeaderCell>
+                      <TableHeaderCell>Profit</TableHeaderCell>
+                    </TableRow>
+                  </TableHead>
+                  <tbody>
+                    {financialRows.map((row) => (
+                      <TableRow key={row.month}>
+                        <TableCell>{row.month}</TableCell>
+                        <TableCell>{formatCurrency(row.revenue)}</TableCell>
+                        <TableCell>{formatCurrency(row.expenses)}</TableCell>
+                        <TableCell>{formatCurrency(row.profit)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+
+              <div className="mt-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-sand-700">Expense Details</h2>
+                  <span className="text-xs text-sand-600">
+                    Total: {formatCurrency(expenseReport.total || 0)}
+                  </span>
+                </div>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      {expenseReport.headers.map((header) => (
+                        <TableHeaderCell key={header}>{header}</TableHeaderCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <tbody>
+                    {expenseReport.rows.map((row, rowIdx) => (
+                      <TableRow
+                        key={rowIdx}
+                        className={expenseReport.boldRows.includes(rowIdx) ? "bg-sand-50 font-semibold" : undefined}
+                      >
+                        {row.map((cell, cellIdx) => (
+                          <TableCell
+                            key={cellIdx}
+                            className={cellIdx === row.length - 1 ? "text-right" : undefined}
+                          >
+                            {cellIdx === row.length - 1 && typeof cell === "number"
+                              ? formatCurrency(cell)
+                              : cell}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))}
+                  </tbody>
+                </Table>
+              </div>
+            </>
+          ) : null}
 
           {tripMeta && type !== "LIST" ? (
             showBusMeta ? (

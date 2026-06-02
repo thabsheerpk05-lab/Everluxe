@@ -180,6 +180,17 @@ export default function Dashboard() {
     return data.monthly.reduce((best, month) => (month.revenue > best.revenue ? month : best), data.monthly[0]);
   }, [data]);
 
+  const monthOptions = useMemo(
+    () => [
+      { label: "All months", value: "ALL" },
+      ...Array.from({ length: 12 }, (_, idx) => ({
+        label: new Date(2024, idx, 1).toLocaleString("en-GB", { month: "short" }),
+        value: String(idx)
+      }))
+    ],
+    []
+  );
+
   if (error) {
     return <div className="text-sm text-sand-600">Unable to load dashboard data.</div>;
   }
@@ -195,17 +206,6 @@ export default function Dashboard() {
     `Updated ${new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date())}`,
     "Last 12 months"
   ];
-
-  const monthOptions = useMemo(
-    () => [
-      { label: "All months", value: "ALL" },
-      ...Array.from({ length: 12 }, (_, idx) => ({
-        label: new Date(2024, idx, 1).toLocaleString("en-GB", { month: "short" }),
-        value: String(idx)
-      }))
-    ],
-    []
-  );
 
   const formatMonthLabel = (yearValue, monthIndex) => {
     const month = new Date(yearValue, monthIndex, 1).toLocaleString("en-GB", { month: "short" });
@@ -572,6 +572,5 @@ export default function Dashboard() {
     </div>
   );
 }
-
 
 
