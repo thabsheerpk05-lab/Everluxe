@@ -131,21 +131,22 @@ function compactPassengerPdfReport(report) {
     rows: report.rows.map((row) => row.map((cell, idx) => (idx === 1 ? formatCompactPdfDate(cell) : cell))),
     alignments: ["center", "center", "left", "left", "left", "left", "right", "left", "center"],
     pdfOptions: {
-      fontSize: 6.8,
-      headFontSize: 7.2,
-      cellPadding: 3,
-      headCellPadding: 4,
+      marginX: 18,
+      fontSize: 10.5,
+      headFontSize: 10.8,
+      cellPadding: 4.5,
+      headCellPadding: 5,
       overflow: "ellipsize",
       columnStyles: {
-        0: { cellWidth: 24 },
-        1: { cellWidth: 42 },
-        2: { cellWidth: 82 },
-        3: { cellWidth: 64 },
-        4: { cellWidth: 52 },
-        5: { cellWidth: 58 },
-        6: { cellWidth: 42 },
-        7: { cellWidth: 78 },
-        8: { cellWidth: 38 }
+        0: { cellWidth: 28 },
+        1: { cellWidth: 52 },
+        2: { cellWidth: 180 },
+        3: { cellWidth: 88 },
+        4: { cellWidth: 64 },
+        5: { cellWidth: 78 },
+        6: { cellWidth: 54 },
+        7: { cellWidth: 128 },
+        8: { cellWidth: 75 }
       }
     }
   };
@@ -704,7 +705,23 @@ export default function Reports() {
           `Total Expense: ${formatCurrency(expenseReport.total || 0)}`
         ],
         alignments: ["center", "left", "left", "left", "left", "right"],
-        boldRows: expenseReport.boldRows
+        boldRows: expenseReport.boldRows,
+        pdfOptions: {
+          marginX: 24,
+          fontSize: 10.5,
+          headFontSize: 10.8,
+          cellPadding: 4.5,
+          headCellPadding: 5,
+          overflow: "ellipsize",
+          columnStyles: {
+            0: { cellWidth: 34 },
+            1: { cellWidth: 150 },
+            2: { cellWidth: 150 },
+            3: { cellWidth: 200 },
+            4: { cellWidth: 105 },
+            5: { cellWidth: 82 }
+          }
+        }
       },
       selectedStatementMonths(),
       {
@@ -712,7 +729,8 @@ export default function Reports() {
         expenseHeaderTitle: "WADINOOR DAILY UMRAH SERVICE",
         statementHeaderTitle: "WADINOOR",
         statementTitle: "PROFIT AND LOSS A/C",
-        includeGenerated: false
+        includeGenerated: false,
+        orientation: "landscape"
       }
     );
   };

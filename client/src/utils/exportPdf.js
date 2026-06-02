@@ -30,7 +30,7 @@ function addTableReport(doc, title, headers, rows, options = {}) {
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const marginX = 40;
+  const marginX = options.marginX ?? 40;
   const contentWidth = pageWidth - marginX * 2;
   const brand = { r: 30, g: 104, b: 86 };
 
@@ -161,7 +161,7 @@ function addTableReport(doc, title, headers, rows, options = {}) {
       fillColor: [246, 248, 250]
     },
     columnStyles,
-    margin: { left: 40, right: 40 },
+    margin: { left: marginX, right: marginX },
     didParseCell: (data) => {
       if (data.section === "body" && boldRows.includes(data.row.index)) {
         data.cell.styles.fontStyle = "bold";
@@ -372,13 +372,14 @@ export function exportPassengerIncomeStatementPdf(filename, passengerReport, sta
 }
 
 export function exportListExpenseIncomePdf(filename, passengerReport, expenseReport, statementMonths, options = {}) {
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const doc = new jsPDF({ unit: "pt", format: "a4", orientation: options.orientation || "landscape" });
   addTableReport(doc, passengerReport.title, passengerReport.headers, passengerReport.rows, {
     headerTitle: options.passengerHeaderTitle || DEFAULT_HEADER,
     meta: passengerReport.meta || [],
     alignments: passengerReport.alignments,
     includeGenerated: options.includeGenerated,
-    includeMeta: (passengerReport.meta || []).length > 0
+    includeMeta: (passengerReport.meta || []).length > 0,
+    ...(passengerReport.pdfOptions || {})
   });
 
   doc.addPage();
