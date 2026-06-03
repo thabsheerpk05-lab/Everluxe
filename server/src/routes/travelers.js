@@ -5,9 +5,22 @@ import { hasPermission, getAmeerContext } from "../lib/permissions.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 const router = express.Router();
-const allowedTravelerTypes = ["FAMILY", "BACHELOR"];
+const allowedTravelerTypes = ["FAMILY", "BACHELOR", "LADY"];
 const allowedStatuses = ["ACTIVE", "CANCELLED"];
 const allowedPaymentStatuses = ["PAID", "PARTIAL", "UNPAID"];
+const allowedServiceDirections = ["INBOUND", "OUTBOUND"];
+
+const normalizeServiceProviderId = (value) => {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeServiceDirection = (value) => {
+  const direction = String(value || "").trim().toUpperCase();
+  return allowedServiceDirections.includes(direction) ? direction : "";
+};
 
 const normalizeFamilyMembers = (members) => {
   if (!Array.isArray(members)) return [];
@@ -156,11 +169,12 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
     customPrice,
     status,
     serviceProviderId,
+    serviceDirection,
     paymentAmount,
     discountAmount
   } = req.body || {};
 
-  if (!travelerName || !passportOrIqama || !travelerType || !tripId || !serviceProviderId) {
+  if (!travelerName || !passportOrIqama || !travelerType || !tripId) {
     return res.status(400).json({ message: "Required fields are missing" });
   }
 
@@ -168,8 +182,8 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Invalid traveler type" });
   }
 
-  if (travelerType === "BACHELOR" && !phoneNumber) {
-    return res.status(400).json({ message: "Phone number is required for bachelor travelers" });
+  if (travelerType !== "FAMILY" && !phoneNumber) {
+    return res.status(400).json({ message: "Phone number is required for bachelor and lady travelers" });
   }
 
   if (status && !allowedStatuses.includes(status)) {
@@ -192,6 +206,22 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
   if (ameerId && trip.status !== "OPEN") {
     return res.status(403).json({ message: "You can only manage open trips" });
   }
+  if (!ameerId && trip.status !== "OPEN") {
+    return res.status(400).json({ message: "Cannot add travelers to a finished trip" });
+  }
+
+  const normalizedProviderId = normalizeServiceProviderId(serviceProviderId) ?? null;
+  const provider = normalizedProviderId
+    ? await prisma.serviceProvider.findUnique({ where: { id: normalizedProviderId } })
+    : null;
+  if (normalizedProviderId && !provider) {
+    return res.status(400).json({ message: "Service provider not found" });
+  }
+  const normalizedDirection = normalizeServiceDirection(serviceDirection);
+  if (provider && !provider.isMain && !normalizedDirection) {
+    return res.status(400).json({ message: "Inbound or outbound is required for other service providers" });
+  }
+  const resolvedServiceDirection = provider && !provider.isMain ? normalizedDirection : null;
 
   const nextStatus = status || "ACTIVE";
   if (nextStatus !== "CANCELLED") {
@@ -232,7 +262,8 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
       customPrice: Number(customPriceValue || 0),
       finalAmount,
       status: status || "ACTIVE",
-      serviceProviderId: Number(serviceProviderId),
+      serviceProviderId: normalizedProviderId,
+      serviceDirection: resolvedServiceDirection,
       createdById: req.user.id,
       familyMembers: normalizedMembers.length ? { create: normalizedMembers } : undefined
     }
@@ -245,7 +276,7 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   const existing = await prisma.traveler.findUnique({
     where: { id },
-    include: { trip: true }
+    include: { trip: true, serviceProvider: true }
   });
   if (!existing) {
     return res.status(404).json({ message: "Traveler not found" });
@@ -283,6 +314,7 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
     customPrice,
     status,
     serviceProviderId,
+    serviceDirection,
     paymentAmount,
     discountAmount
   } = req.body || {};
@@ -291,8 +323,8 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Invalid traveler type" });
   }
 
-  if (canEditTravelers && travelerType === "BACHELOR" && !phoneNumber) {
-    return res.status(400).json({ message: "Phone number is required for bachelor travelers" });
+  if (canEditTravelers && travelerType && travelerType !== "FAMILY" && !phoneNumber) {
+    return res.status(400).json({ message: "Phone number is required for bachelor and lady travelers" });
   }
 
   if (canEditTravelers && status && !allowedStatuses.includes(status)) {
@@ -315,6 +347,32 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
   if (ameerId && trip.status !== "OPEN") {
     return res.status(403).json({ message: "You can only manage open trips" });
   }
+  if (!ameerId && tripId && trip.status !== "OPEN") {
+    return res.status(400).json({ message: "Cannot move travelers to a finished trip" });
+  }
+
+  const serviceProviderTouched = canEditTravelers && (serviceProviderId !== undefined || serviceDirection !== undefined);
+  let resolvedProviderId = existing.serviceProviderId;
+  let resolvedProvider = existing.serviceProvider;
+  if (canEditTravelers && serviceProviderId !== undefined) {
+    resolvedProviderId = normalizeServiceProviderId(serviceProviderId);
+    resolvedProvider = resolvedProviderId
+      ? await prisma.serviceProvider.findUnique({ where: { id: resolvedProviderId } })
+      : null;
+    if (resolvedProviderId && !resolvedProvider) {
+      return res.status(400).json({ message: "Service provider not found" });
+    }
+  }
+  const requestedDirection = serviceDirection !== undefined
+    ? normalizeServiceDirection(serviceDirection)
+    : existing.serviceDirection;
+  if (serviceProviderTouched && serviceDirection && !requestedDirection) {
+    return res.status(400).json({ message: "Invalid service direction" });
+  }
+  if (serviceProviderTouched && resolvedProvider && !resolvedProvider.isMain && !requestedDirection) {
+    return res.status(400).json({ message: "Inbound or outbound is required for other service providers" });
+  }
+  const resolvedServiceDirection = resolvedProvider && !resolvedProvider.isMain ? requestedDirection : null;
 
   const normalizedMembers = Array.isArray(familyMembers)
     ? normalizeFamilyMembers(familyMembers)
@@ -352,7 +410,8 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
     data.customPrice = customPrice !== undefined || discountAmount !== undefined ? Number(nextCustom) : undefined;
     data.finalAmount = finalAmount;
     data.status = status;
-    data.serviceProviderId = serviceProviderId ? Number(serviceProviderId) : undefined;
+    data.serviceProviderId = serviceProviderId !== undefined ? resolvedProviderId : undefined;
+    data.serviceDirection = serviceProviderId !== undefined || serviceDirection !== undefined ? resolvedServiceDirection : undefined;
     if (normalizedMembers) {
       data.familyMembers = {
         deleteMany: {},

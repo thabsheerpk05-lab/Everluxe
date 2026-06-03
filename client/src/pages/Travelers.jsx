@@ -15,6 +15,13 @@ import { useConfirm } from "../hooks/useConfirm.jsx";
 import { parsePermissions } from "../utils/permissions.js";
 
 const travelerStatuses = ["ACTIVE", "CANCELLED"];
+const travelerTypes = [
+  { value: "FAMILY", label: "Family" },
+  { value: "BACHELOR", label: "Bachelor" },
+  { value: "LADY", label: "Lady" }
+];
+const soloTravelerTypes = ["BACHELOR", "LADY"];
+const serviceDirections = ["INBOUND", "OUTBOUND"];
 
   const sorters = {
     name: (a, b) => a.travelerName.localeCompare(b.travelerName),
@@ -85,6 +92,8 @@ export default function Travelers() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkStatus, setBulkStatus] = useState("CANCELLED");
+  const [bulkProviderId, setBulkProviderId] = useState("");
+  const [bulkServiceDirection, setBulkServiceDirection] = useState("INBOUND");
   const travelerNameRef = useRef(null);
   const [form, setForm] = useState({
     travelerName: "",
@@ -100,7 +109,8 @@ export default function Travelers() {
     extraRoomCharge: "0",
     customPrice: "0",
     status: "ACTIVE",
-    serviceProviderId: ""
+    serviceProviderId: "",
+    serviceDirection: ""
   });
 
   const loadMeta = async () => {
@@ -111,7 +121,7 @@ export default function Travelers() {
     setTrips(tripData);
     setProviders(providerData);
 
-    const defaultProvider = providerData.find((p) => p.providerName.toLowerCase() === "wadinoor");
+    const defaultProvider = providerData.find((p) => p.isMain || p.providerName.toLowerCase() === "wadinoor");
     if (!editingId && defaultProvider) {
       setForm((prev) => ({ ...prev, serviceProviderId: String(defaultProvider.id) }));
     }
@@ -172,9 +182,15 @@ export default function Travelers() {
   const allSelected = paged.length > 0 && paged.every((item) => selectedIds.includes(item.id));
 
   const defaultProviderId = useMemo(() => {
-    const found = providers.find((provider) => provider.providerName.toLowerCase() === "wadinoor");
+    const found = providers.find((provider) => provider.isMain || provider.providerName.toLowerCase() === "wadinoor");
     return found ? String(found.id) : "";
   }, [providers]);
+
+  const findProvider = (id) => providers.find((provider) => String(provider.id) === String(id));
+  const selectedProvider = findProvider(form.serviceProviderId);
+  const isOtherProvider = Boolean(selectedProvider && !selectedProvider.isMain);
+  const bulkSelectedProvider = findProvider(bulkProviderId);
+  const isBulkOtherProvider = Boolean(bulkSelectedProvider && !bulkSelectedProvider.isMain);
 
   const resetForm = (providerId = defaultProviderId || form.serviceProviderId) => {
     setForm({
@@ -191,7 +207,8 @@ export default function Travelers() {
       extraRoomCharge: "0",
       customPrice: "0",
       status: "ACTIVE",
-      serviceProviderId: providerId || ""
+      serviceProviderId: providerId || "",
+      serviceDirection: ""
     });
   };
 
@@ -204,13 +221,13 @@ export default function Travelers() {
       return;
     }
 
-    if (!form.serviceProviderId) {
-      toast({ title: "Service provider is required.", variant: "error" });
+    if (isOtherProvider && !form.serviceDirection) {
+      toast({ title: "Inbound or outbound is required for other service providers.", variant: "error" });
       return;
     }
 
-    if (form.travelerType === "BACHELOR" && !form.phoneNumber) {
-      toast({ title: "Phone number is required for bachelor travelers.", variant: "error" });
+    if (soloTravelerTypes.includes(form.travelerType) && !form.phoneNumber) {
+      toast({ title: "Phone number is required for bachelor and lady travelers.", variant: "error" });
       return;
     }
 
@@ -227,6 +244,7 @@ export default function Travelers() {
       ...rest,
       familyCount: computedFamilyCount,
       familyMembers: payloadMembers,
+      serviceDirection: isOtherProvider ? form.serviceDirection : ""
     };
 
     try {
@@ -276,7 +294,8 @@ export default function Travelers() {
       extraRoomCharge: traveler.extraRoomCharge,
       customPrice: traveler.customPrice,
       status: traveler.status,
-      serviceProviderId: traveler.serviceProviderId || ""
+      serviceProviderId: traveler.serviceProviderId || "",
+      serviceDirection: traveler.serviceDirection || ""
     });
     setIsFormOpen(true);
   };
@@ -323,32 +342,60 @@ export default function Travelers() {
 
   const handleBulkDelete = async () => {
     if (!selectedIds.length) return;
+    const idsToDelete = selectedIds;
     const confirmed = await confirm({
-      title: `Delete ${selectedIds.length} travelers?`,
+      title: `Delete ${idsToDelete.length} travelers?`,
       description: "This will permanently remove the selected travelers.",
       confirmLabel: "Delete",
       tone: "danger"
     });
     if (!confirmed) return;
-    await Promise.all(selectedIds.map((id) => apiFetch(`/travelers/${id}`, { method: "DELETE" })));
     setSelectedIds([]);
+    await Promise.all(idsToDelete.map((id) => apiFetch(`/travelers/${id}`, { method: "DELETE" })));
     await loadTravelers();
   };
 
   const handleBulkStatus = async () => {
     if (!selectedIds.length) return;
+    const idsToUpdate = selectedIds;
     const confirmed = await confirm({
-      title: `Update status for ${selectedIds.length} travelers?`,
+      title: `Update status for ${idsToUpdate.length} travelers?`,
       description: "This will update the status for all selected travelers.",
       confirmLabel: "Update status",
       tone: "warning"
     });
     if (!confirmed) return;
-    await Promise.all(selectedIds.map((id) => apiFetch(`/travelers/${id}`, {
+    setSelectedIds([]);
+    await Promise.all(idsToUpdate.map((id) => apiFetch(`/travelers/${id}`, {
       method: "PUT",
       body: JSON.stringify({ status: bulkStatus })
     })));
+    await loadTravelers();
+  };
+
+  const handleBulkServiceProvider = async () => {
+    if (!selectedIds.length) return;
+    if (isBulkOtherProvider && !bulkServiceDirection) {
+      toast({ title: "Inbound or outbound is required for other service providers.", variant: "error" });
+      return;
+    }
+    const idsToUpdate = selectedIds;
+    const confirmed = await confirm({
+      title: `Update provider for ${idsToUpdate.length} travelers?`,
+      description: "This will update the service provider for all selected travelers.",
+      confirmLabel: "Update provider",
+      tone: "warning"
+    });
+    if (!confirmed) return;
+    const payload = {
+      serviceProviderId: bulkProviderId,
+      serviceDirection: isBulkOtherProvider ? bulkServiceDirection : ""
+    };
     setSelectedIds([]);
+    await Promise.all(idsToUpdate.map((id) => apiFetch(`/travelers/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload)
+    })));
     await loadTravelers();
   };
 
@@ -401,6 +448,9 @@ export default function Travelers() {
   const canEdit = (traveler) => user?.role === "ADMIN" || traveler.createdById === user?.id || isAmeerStaff;
 
   const selectedTrip = trips.find((trip) => String(trip.id) === String(form.tripId));
+  const tripOptions = editingId
+    ? trips
+    : trips.filter((trip) => trip.status !== "FINISHED");
   const normalizedFamilyMembers = form.travelerType === "FAMILY"
     ? (form.familyMembers || []).map(normalizeFamilyMember).filter(Boolean)
     : [];
@@ -450,17 +500,18 @@ export default function Travelers() {
               <Input
                 value={form.phoneNumber}
                 onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
-                placeholder={form.travelerType === "FAMILY" ? "Optional for family" : "Required for bachelor"}
+                placeholder={form.travelerType === "FAMILY" ? "Optional for family" : "Required for bachelor/lady"}
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-sand-600">Family or Bachelor</label>
+              <label className="text-xs font-semibold text-sand-600">Traveler Type</label>
               <Select
                 value={form.travelerType}
                 onChange={(e) => setForm({ ...form, travelerType: e.target.value })}
               >
-                <option value="FAMILY">Family</option>
-                <option value="BACHELOR">Bachelor</option>
+                {travelerTypes.map((type) => (
+                  <option key={type.value} value={type.value}>{type.label}</option>
+                ))}
               </Select>
             </div>
             {form.travelerType === "FAMILY" ? (
@@ -499,7 +550,7 @@ export default function Travelers() {
               <label className="text-xs font-semibold text-sand-600">Trip</label>
               <Select value={form.tripId} onChange={(e) => setForm({ ...form, tripId: e.target.value })}>
                 <option value="">Select trip</option>
-                {trips.map((trip) => (
+                {tripOptions.map((trip) => (
                   <option key={trip.id} value={trip.id}>
                     {trip.package?.packageName} ({formatDate(trip.tripDate)})
                   </option>
@@ -510,16 +561,36 @@ export default function Travelers() {
               <label className="text-xs font-semibold text-sand-600">Service Provider</label>
               <Select
                 value={form.serviceProviderId}
-                onChange={(e) => setForm({ ...form, serviceProviderId: e.target.value })}
+                onChange={(e) => {
+                  const nextProvider = findProvider(e.target.value);
+                  setForm({
+                    ...form,
+                    serviceProviderId: e.target.value,
+                    serviceDirection: nextProvider && !nextProvider.isMain ? form.serviceDirection || "INBOUND" : ""
+                  });
+                }}
               >
-                <option value="">Select provider</option>
+                <option value="">No provider</option>
                 {providers.map((provider) => (
                   <option key={provider.id} value={provider.id}>
-                    {provider.providerName}
+                    {provider.providerName}{provider.isMain ? " (Main)" : ""}
                   </option>
                 ))}
               </Select>
             </div>
+            {isOtherProvider ? (
+              <div>
+                <label className="text-xs font-semibold text-sand-600">Inbound / Outbound</label>
+                <Select
+                  value={form.serviceDirection}
+                  onChange={(e) => setForm({ ...form, serviceDirection: e.target.value })}
+                >
+                  {serviceDirections.map((direction) => (
+                    <option key={direction} value={direction}>{direction}</option>
+                  ))}
+                </Select>
+              </div>
+            ) : null}
             <div>
               <label className="text-xs font-semibold text-sand-600">Final Amount (Seasonal)</label>
               <Input value={finalAmount} readOnly />
@@ -586,16 +657,42 @@ export default function Travelers() {
           </div>
 
           {selectedIds.length ? (
-            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-sand-200 bg-sand-50 px-3 py-2">
-              <span className="text-xs font-semibold text-sand-700">Selected: {selectedIds.length}</span>
-              <Select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
+            <div className="mb-4 flex flex-nowrap items-center gap-2 overflow-x-auto rounded-lg border border-sand-200 bg-sand-50 px-2 py-2">
+              <span className="shrink-0 rounded-md bg-white px-2 py-1 text-xs font-semibold text-sand-700">
+                Selected: {selectedIds.length}
+              </span>
+              <Select className="h-9 w-32 shrink-0" value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)}>
                 {travelerStatuses.map((status) => (
                   <option key={status} value={status}>{status}</option>
                 ))}
               </Select>
-              <Button size="sm" variant="outline" onClick={handleBulkStatus}>Apply Status</Button>
+              <Button className="shrink-0 whitespace-nowrap" size="sm" variant="outline" onClick={handleBulkStatus}>Apply Status</Button>
+              <Select
+                className="h-9 w-44 shrink-0"
+                value={bulkProviderId}
+                onChange={(e) => {
+                  const nextProvider = findProvider(e.target.value);
+                  setBulkProviderId(e.target.value);
+                  setBulkServiceDirection(nextProvider && !nextProvider.isMain ? bulkServiceDirection || "INBOUND" : "");
+                }}
+              >
+                <option value="">No provider</option>
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.providerName}{provider.isMain ? " (Main)" : ""}
+                  </option>
+                ))}
+              </Select>
+              {isBulkOtherProvider ? (
+                <Select className="h-9 w-36 shrink-0" value={bulkServiceDirection} onChange={(e) => setBulkServiceDirection(e.target.value)}>
+                  {serviceDirections.map((direction) => (
+                    <option key={direction} value={direction}>{direction}</option>
+                  ))}
+                </Select>
+              ) : null}
+              <Button className="shrink-0 whitespace-nowrap" size="sm" variant="outline" onClick={handleBulkServiceProvider}>Apply Provider</Button>
               {user?.role === "ADMIN" ? (
-                <Button size="sm" variant="outline" onClick={handleBulkDelete}>Delete Selected</Button>
+                <Button className="shrink-0 whitespace-nowrap" size="sm" variant="outline" onClick={handleBulkDelete}>Delete Selected</Button>
               ) : null}
             </div>
           ) : null}
@@ -603,16 +700,17 @@ export default function Travelers() {
           <Table className="min-w-[1200px]">
             <TableHead>
               <TableRow>
-                <TableHeaderCell className="sticky left-0 z-20 w-10 bg-sand-100 border-r border-sand-200">
+                <TableHeaderCell className="sticky left-0 z-20 w-8 min-w-8 bg-sand-100 border-r border-sand-200 px-2 text-center">
                   <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
                 </TableHeaderCell>
-                <TableHeaderCell onClick={() => toggleSort("name")} className="sticky left-10 z-20 bg-sand-100 border-r border-sand-200 cursor-pointer">Name</TableHeaderCell>
+                <TableHeaderCell onClick={() => toggleSort("name")} className="sticky left-8 z-20 bg-sand-100 border-r border-sand-200 cursor-pointer">Name</TableHeaderCell>
                 <TableHeaderCell onClick={() => toggleSort("passport")} className="cursor-pointer">Passport/Iqama</TableHeaderCell>
                 <TableHeaderCell>Phone</TableHeaderCell>
                 <TableHeaderCell>Type</TableHeaderCell>
                 <TableHeaderCell onClick={() => toggleSort("family")} className="cursor-pointer">Family Count</TableHeaderCell>
                 <TableHeaderCell>Status</TableHeaderCell>
                 <TableHeaderCell>Provider</TableHeaderCell>
+                <TableHeaderCell>Direction</TableHeaderCell>
                 <TableHeaderCell>Trip</TableHeaderCell>
                 <TableHeaderCell onClick={() => toggleSort("amount")} className="cursor-pointer">Payment</TableHeaderCell>
                 <TableHeaderCell>Final</TableHeaderCell>
@@ -622,14 +720,14 @@ export default function Travelers() {
             <tbody>
               {paged.map((traveler) => (
                 <TableRow key={traveler.id}>
-                  <TableCell className="sticky left-0 z-10 bg-white border-r border-sand-200 max-w-none">
+                  <TableCell className="sticky left-0 z-10 w-8 min-w-8 bg-white border-r border-sand-200 max-w-none px-2 text-center">
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(traveler.id)}
                       onChange={() => toggleSelect(traveler.id)}
                     />
                   </TableCell>
-                  <TableCell className="sticky left-10 z-10 bg-white border-r border-sand-200" title={traveler.travelerName}>
+                  <TableCell className="sticky left-8 z-10 bg-white border-r border-sand-200" title={traveler.travelerName}>
                     <div>{traveler.travelerName}</div>
                     {traveler.travelerType === "FAMILY" && traveler.familyMembers?.length ? (
                       <div className="mt-1 space-y-1 text-xs text-sand-500">
@@ -654,7 +752,17 @@ export default function Travelers() {
                       {traveler.status}
                     </Badge>
                   </TableCell>
-                  <TableCell>{traveler.serviceProvider?.providerName || "-"}</TableCell>
+                  <TableCell>
+                    {traveler.serviceProvider?.providerName ? (
+                      <div>
+                        <div>{traveler.serviceProvider.providerName}</div>
+                        {traveler.serviceProvider.isMain ? (
+                          <div className="text-xs text-sand-500">Main</div>
+                        ) : null}
+                      </div>
+                    ) : "-"}
+                  </TableCell>
+                  <TableCell>{traveler.serviceDirection || "-"}</TableCell>
                   <TableCell>{traveler.trip?.package?.packageName}</TableCell>
                   <TableCell>
                     <div className="space-y-1">

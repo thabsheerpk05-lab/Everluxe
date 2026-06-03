@@ -5,13 +5,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.
 import { Button } from "../components/ui/button.jsx";
 import { Input } from "../components/ui/input.jsx";
 import { Modal, ModalBody, ModalHeader, ModalTitle } from "../components/ui/modal.jsx";
+import { Select } from "../components/ui/select.jsx";
 import { Table, TableHead, TableRow, TableHeaderCell, TableCell } from "../components/ui/table.jsx";
+import { Badge } from "../components/ui/badge.jsx";
 import { useToast } from "../context/ToastContext.jsx";
 import { handleEnterToNext } from "../utils/enterToNext.js";
 import { useConfirm } from "../hooks/useConfirm.jsx";
 
 const sorters = {
-  name: (a, b) => a.providerName.localeCompare(b.providerName)
+  name: (a, b) => {
+    if (a.isMain && !b.isMain) return -1;
+    if (!a.isMain && b.isMain) return 1;
+    return a.providerName.localeCompare(b.providerName);
+  }
 };
 
 export default function Providers() {
@@ -19,7 +25,7 @@ export default function Providers() {
   const { toast } = useToast();
   const { confirm, dialog } = useConfirm();
   const [providers, setProviders] = useState([]);
-  const [form, setForm] = useState({ providerName: "" });
+  const [form, setForm] = useState({ providerName: "", isMain: false });
   const [editingId, setEditingId] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [sortKey, setSortKey] = useState("name");
@@ -46,7 +52,7 @@ export default function Providers() {
   const paged = sorted.slice((page - 1) * pageSize, page * pageSize);
 
   const resetForm = () => {
-    setForm({ providerName: "" });
+    setForm({ providerName: "", isMain: false });
   };
 
   const handleSubmit = async (event) => {
@@ -80,7 +86,7 @@ export default function Providers() {
 
   const handleEdit = (provider) => {
     setEditingId(provider.id);
-    setForm({ providerName: provider.providerName });
+    setForm({ providerName: provider.providerName, isMain: Boolean(provider.isMain) });
     setIsFormOpen(true);
   };
 
@@ -145,6 +151,16 @@ export default function Providers() {
               <label className="text-xs font-semibold text-sand-600">Provider Name</label>
               <Input value={form.providerName} onChange={(e) => setForm({ ...form, providerName: e.target.value })} />
             </div>
+            <div>
+              <label className="text-xs font-semibold text-sand-600">Provider Type</label>
+              <Select
+                value={form.isMain ? "MAIN" : "OTHER"}
+                onChange={(e) => setForm({ ...form, isMain: e.target.value === "MAIN" })}
+              >
+                <option value="MAIN">Main Provider</option>
+                <option value="OTHER">Other Provider</option>
+              </Select>
+            </div>
             <div className="flex gap-2 md:col-span-2 justify-end">
               <Button type="submit">{editingId ? "Update Provider" : "Add Provider"}</Button>
               <Button type="button" variant="outline" onClick={closeForm}>Close</Button>
@@ -162,6 +178,7 @@ export default function Providers() {
             <TableHead>
               <TableRow>
                 <TableHeaderCell onClick={() => toggleSort("name")} className="cursor-pointer">Provider</TableHeaderCell>
+                <TableHeaderCell>Type</TableHeaderCell>
                 <TableHeaderCell>Actions</TableHeaderCell>
               </TableRow>
             </TableHead>
@@ -169,6 +186,11 @@ export default function Providers() {
               {paged.map((provider) => (
                 <TableRow key={provider.id}>
                   <TableCell>{provider.providerName}</TableCell>
+                  <TableCell>
+                    <Badge variant={provider.isMain ? "success" : "info"}>
+                      {provider.isMain ? "Main" : "Other"}
+                    </Badge>
+                  </TableCell>
                   <TableCell className="max-w-none">
                     <div className="flex gap-2">
                       <Button size="sm" variant="outline" onClick={() => handleEdit(provider)}>Edit</Button>

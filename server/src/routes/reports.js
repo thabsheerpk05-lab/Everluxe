@@ -35,6 +35,41 @@ function normalizeProviderName(value) {
   return String(value || "").toLowerCase().replace(/\s+/g, "");
 }
 
+function buildPeriodRange(query) {
+  const year = Number(query.year) || new Date().getFullYear();
+  const monthParam = String(query.month || "ALL").trim();
+  const dateFrom = String(query.dateFrom || "").trim();
+  const dateTo = String(query.dateTo || "").trim();
+  const range = {};
+
+  if (dateFrom) {
+    const start = new Date(dateFrom);
+    start.setHours(0, 0, 0, 0);
+    range.gte = start;
+  }
+  if (dateTo) {
+    const end = new Date(dateTo);
+    end.setHours(23, 59, 59, 999);
+    range.lte = end;
+  }
+  if (!dateFrom && !dateTo) {
+    const monthIndex = monthParam === "ALL" ? null : Number(monthParam);
+    if (monthParam !== "ALL" && (monthIndex < 0 || monthIndex > 11 || Number.isNaN(monthIndex))) {
+      return { error: "Invalid month" };
+    }
+    const start = monthIndex === null
+      ? new Date(year, 0, 1, 0, 0, 0, 0)
+      : new Date(year, monthIndex, 1, 0, 0, 0, 0);
+    const end = monthIndex === null
+      ? new Date(year, 11, 31, 23, 59, 59, 999)
+      : new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
+    range.gte = start;
+    range.lte = end;
+  }
+
+  return { year, monthParam, dateFrom, dateTo, range };
+}
+
 router.get("/summary", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_view_reports")) {
     return res.status(403).json({ message: "Access denied" });
@@ -178,6 +213,8 @@ router.get("/trip/:tripId", authenticate, asyncHandler(async (req, res) => {
     tripDate: traveler.trip?.tripDate || trip?.tripDate || null,
     tripStatus: traveler.trip?.status || trip?.status || null,
     serviceProviderName: traveler.serviceProvider?.providerName || "",
+    serviceProviderIsMain: Boolean(traveler.serviceProvider?.isMain),
+    serviceDirection: traveler.serviceDirection || "",
     familyMembers: traveler.familyMembers?.map((member) => ({
       name: member.name,
       passportOrIqama: member.passportOrIqama || ""
@@ -207,25 +244,16 @@ router.get("/travelers", authenticate, asyncHandler(async (req, res) => {
     return res.status(403).json({ message: "Access denied" });
   }
 
-  const month = String(req.query.month || "").trim();
-  if (!month) {
-    return res.status(400).json({ message: "Month is required" });
+  const period = buildPeriodRange(req.query);
+  if (period.error) {
+    return res.status(400).json({ message: period.error });
   }
-  const [yearStr, monthStr] = month.split("-");
-  const year = Number(yearStr);
-  const monthIndex = Number(monthStr) - 1;
-  if (!year || monthIndex < 0 || monthIndex > 11) {
-    return res.status(400).json({ message: "Invalid month format. Use YYYY-MM." });
-  }
-
-  const start = new Date(year, monthIndex, 1, 0, 0, 0, 0);
-  const end = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
 
   const ameerId = getAmeerContext(req.user);
   const where = {
     ...activeFilter,
     trip: {
-      tripDate: { gte: start, lte: end },
+      tripDate: period.range,
       ...(ameerId ? { ameerId } : {})
     }
   };
@@ -252,6 +280,8 @@ router.get("/travelers", authenticate, asyncHandler(async (req, res) => {
     tripDate: traveler.trip?.tripDate || null,
     tripStatus: traveler.trip?.status || null,
     serviceProviderName: traveler.serviceProvider?.providerName || "",
+    serviceProviderIsMain: Boolean(traveler.serviceProvider?.isMain),
+    serviceDirection: traveler.serviceDirection || "",
     familyMembers: traveler.familyMembers?.map((member) => ({
       name: member.name,
       passportOrIqama: member.passportOrIqama || ""
@@ -259,8 +289,45 @@ router.get("/travelers", authenticate, asyncHandler(async (req, res) => {
   }));
 
   return res.json({
-    month,
+    year: period.year,
+    month: period.monthParam,
+    dateFrom: period.dateFrom || null,
+    dateTo: period.dateTo || null,
+    totalRevenue: formatted.reduce((sum, traveler) => sum + Number(traveler.amountPaid || 0), 0),
     passengers: formatted
+  });
+}));
+
+router.get("/expenses", authenticate, asyncHandler(async (req, res) => {
+  if (!hasPermission(req.user, "can_view_reports")) {
+    return res.status(403).json({ message: "Access denied" });
+  }
+
+  const period = buildPeriodRange(req.query);
+  if (period.error) {
+    return res.status(400).json({ message: period.error });
+  }
+
+  const ameerId = getAmeerContext(req.user);
+  const expenses = await prisma.expense.findMany({
+    where: {
+      date: period.range,
+      ...(ameerId ? { trip: { ameerId } } : {})
+    },
+    orderBy: { date: "asc" },
+    include: {
+      trip: { include: { package: true } },
+      serviceProvider: true
+    }
+  });
+
+  return res.json({
+    year: period.year,
+    month: period.monthParam,
+    dateFrom: period.dateFrom || null,
+    dateTo: period.dateTo || null,
+    totalExpenses: expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+    expenses
   });
 }));
 
@@ -269,7 +336,11 @@ router.get("/financial", authenticate, asyncHandler(async (req, res) => {
     return res.status(403).json({ message: "Access denied" });
   }
 
-  const year = Number(req.query.year) || new Date().getFullYear();
+  const period = buildPeriodRange(req.query);
+  if (period.error) {
+    return res.status(400).json({ message: period.error });
+  }
+  const year = period.year;
   const months = Array.from({ length: 12 }, (_, idx) => {
     const date = new Date(year, idx, 1);
     return { key: monthKey(date), label: monthLabel(date) };
@@ -279,15 +350,23 @@ router.get("/financial", authenticate, asyncHandler(async (req, res) => {
   const travelers = await prisma.traveler.findMany({
     where: {
       ...activeFilter,
-      ...(ameerId ? { trip: { ameerId } } : {})
+      trip: {
+        tripDate: period.range,
+        ...(ameerId ? { ameerId } : {})
+      },
     },
     select: {
       createdAt: true,
       amountPaid: true,
-      serviceProvider: { select: { providerName: true } }
+      trip: { select: { tripDate: true } },
+      serviceProvider: { select: { providerName: true, isMain: true } }
     }
   });
   const expenses = await prisma.expense.findMany({
+    where: {
+      date: period.range,
+      ...(ameerId ? { trip: { ameerId } } : {})
+    },
     select: { date: true, amount: true, category: true }
   });
 
@@ -295,11 +374,11 @@ router.get("/financial", authenticate, asyncHandler(async (req, res) => {
   const internalRevenueMap = new Map();
   const externalRevenueMap = new Map();
   for (const traveler of travelers) {
-    const key = monthKey(traveler.createdAt);
+    const key = monthKey(traveler.trip?.tripDate || traveler.createdAt);
     const amount = Number(traveler.amountPaid || 0);
     revenueMap.set(key, (revenueMap.get(key) || 0) + amount);
     const providerName = normalizeProviderName(traveler.serviceProvider?.providerName);
-    const isInternal = !providerName || providerName === INTERNAL_PROVIDER;
+    const isInternal = !providerName || traveler.serviceProvider?.isMain || providerName === INTERNAL_PROVIDER;
     const targetMap = isInternal ? internalRevenueMap : externalRevenueMap;
     targetMap.set(key, (targetMap.get(key) || 0) + amount);
   }
@@ -402,6 +481,7 @@ router.get("/unpaid", authenticate, asyncHandler(async (req, res) => {
     amountPaid: traveler.amountPaid,
     finalAmount: traveler.finalAmount,
     unpaidAmount: unpaidAmount(traveler),
+    serviceDirection: traveler.serviceDirection || "",
     createdAt: traveler.createdAt
   }));
 

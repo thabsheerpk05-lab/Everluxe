@@ -13,7 +13,7 @@ function formatDate(date) {
   });
 }
 
-export function exportToPdf(title, headers, rows, options = {}) {
+function addTableReport(doc, title, headers, rows, options = {}) {
   const headerTitle = options.headerTitle || DEFAULT_HEADER;
   const meta = options.meta || [];
   const alignments = options.alignments || headers.map((_, idx) => (idx === 0 ? "center" : "left"));
@@ -22,11 +22,15 @@ export function exportToPdf(title, headers, rows, options = {}) {
   const generatedAt = options.generatedAt || new Date();
   const boldRows = options.boldRows || [];
   const metaTitle = options.metaTitle || "Report Details";
+  const fontSize = options.fontSize || 9;
+  const headFontSize = options.headFontSize || 9.5;
+  const cellPadding = options.cellPadding ?? 8;
+  const headCellPadding = options.headCellPadding ?? 9;
+  const overflow = options.overflow || "linebreak";
 
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const marginX = 40;
+  const marginX = options.marginX ?? 40;
   const contentWidth = pageWidth - marginX * 2;
   const brand = { r: 30, g: 104, b: 86 };
 
@@ -122,6 +126,12 @@ export function exportToPdf(title, headers, rows, options = {}) {
   alignments.forEach((align, idx) => {
     columnStyles[idx] = { halign: align };
   });
+  Object.entries(options.columnStyles || {}).forEach(([idx, style]) => {
+    columnStyles[idx] = {
+      ...(columnStyles[idx] || {}),
+      ...style
+    };
+  });
 
   autoTable(doc, {
     head: [headers],
@@ -130,26 +140,28 @@ export function exportToPdf(title, headers, rows, options = {}) {
     theme: "plain",
     styles: {
       font: "helvetica",
-      fontSize: 9,
-      cellPadding: 8,
+      fontSize,
+      cellPadding,
       lineColor: [224, 230, 234],
       lineWidth: 0.6,
-      textColor: [17, 24, 39]
+      textColor: [17, 24, 39],
+      overflow
     },
     headStyles: {
       fillColor: [30, 104, 86],
       textColor: [255, 255, 255],
       fontStyle: "bold",
-      fontSize: 9.5,
+      fontSize: headFontSize,
       lineColor: [30, 104, 86],
       lineWidth: 0.8,
-      cellPadding: 9
+      cellPadding: headCellPadding,
+      overflow
     },
     alternateRowStyles: {
       fillColor: [246, 248, 250]
     },
     columnStyles,
-    margin: { left: 40, right: 40 },
+    margin: { left: marginX, right: marginX },
     didParseCell: (data) => {
       if (data.section === "body" && boldRows.includes(data.row.index)) {
         data.cell.styles.fontStyle = "bold";
@@ -166,6 +178,11 @@ export function exportToPdf(title, headers, rows, options = {}) {
       doc.setTextColor(17, 24, 39);
     }
   });
+}
+
+export function exportToPdf(title, headers, rows, options = {}) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  addTableReport(doc, title, headers, rows, options);
 
   doc.save(`${title || "Report"}.pdf`);
 }
@@ -226,10 +243,9 @@ function buildStatementRows({ revenue, internalRevenue, externalRevenue, expense
   ];
 }
 
-export function exportIncomeStatementPdf(filename, months, options = {}) {
+function addIncomeStatementPages(doc, months, options = {}) {
   const headerTitle = options.headerTitle || "WADINOOR";
   const title = options.title || "PROFIT AND LOSS A/C";
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const marginX = 40;
@@ -240,8 +256,8 @@ export function exportIncomeStatementPdf(filename, months, options = {}) {
     if (index > 0) doc.addPage();
 
     const monthDate = new Date(month.year, month.monthIndex, 1);
-    const periodStart = new Date(month.year, month.monthIndex, 1);
-    const periodEnd = new Date(month.year, month.monthIndex + 1, 0);
+    const periodStart = month.periodStart ? new Date(month.periodStart) : new Date(month.year, month.monthIndex, 1);
+    const periodEnd = month.periodEnd ? new Date(month.periodEnd) : new Date(month.year, month.monthIndex + 1, 0);
     const periodLabel = `${formatDateDMY(periodStart)} TO ${formatDateDMY(periodEnd)}`;
     const monthLabel = formatMonthLabel(monthDate);
 
@@ -324,6 +340,66 @@ export function exportIncomeStatementPdf(filename, months, options = {}) {
     doc.text("Secretary", marginX + tableWidth * 0.6, pageHeight - 60);
     doc.text("President", marginX + tableWidth * 0.8, pageHeight - 60);
   });
+}
+
+export function exportIncomeStatementPdf(filename, months, options = {}) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  addIncomeStatementPages(doc, months, options);
+
+  doc.save(filename);
+}
+
+export function exportPassengerIncomeStatementPdf(filename, passengerReport, statementMonths, options = {}) {
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  addTableReport(doc, passengerReport.title, passengerReport.headers, passengerReport.rows, {
+    headerTitle: options.passengerHeaderTitle || DEFAULT_HEADER,
+    meta: passengerReport.meta || [],
+    alignments: passengerReport.alignments,
+    includeGenerated: options.includeGenerated,
+    includeMeta: (passengerReport.meta || []).length > 0,
+    ...(passengerReport.pdfOptions || {})
+  });
+
+  if (statementMonths.length) {
+    doc.addPage();
+    addIncomeStatementPages(doc, statementMonths, {
+      headerTitle: options.statementHeaderTitle || "WADINOOR",
+      title: options.statementTitle || "PROFIT AND LOSS A/C"
+    });
+  }
+
+  doc.save(filename);
+}
+
+export function exportListExpenseIncomePdf(filename, passengerReport, expenseReport, statementMonths, options = {}) {
+  const doc = new jsPDF({ unit: "pt", format: "a4", orientation: options.orientation || "landscape" });
+  addTableReport(doc, passengerReport.title, passengerReport.headers, passengerReport.rows, {
+    headerTitle: options.passengerHeaderTitle || DEFAULT_HEADER,
+    meta: passengerReport.meta || [],
+    alignments: passengerReport.alignments,
+    includeGenerated: options.includeGenerated,
+    includeMeta: (passengerReport.meta || []).length > 0,
+    ...(passengerReport.pdfOptions || {})
+  });
+
+  doc.addPage();
+  addTableReport(doc, expenseReport.title, expenseReport.headers, expenseReport.rows, {
+    headerTitle: options.expenseHeaderTitle || DEFAULT_HEADER,
+    meta: expenseReport.meta || [],
+    alignments: expenseReport.alignments,
+    boldRows: expenseReport.boldRows || [],
+    includeGenerated: options.includeGenerated,
+    includeMeta: (expenseReport.meta || []).length > 0,
+    ...(expenseReport.pdfOptions || {})
+  });
+
+  if (statementMonths.length) {
+    doc.addPage();
+    addIncomeStatementPages(doc, statementMonths, {
+      headerTitle: options.statementHeaderTitle || "WADINOOR",
+      title: options.statementTitle || "PROFIT AND LOSS A/C"
+    });
+  }
 
   doc.save(filename);
 }

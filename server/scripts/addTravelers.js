@@ -9,7 +9,7 @@ const prisma = new PrismaClient();
 const firstNames = ["Hassan", "Aisha", "Khalid", "Noor", "Salim", "Ibrahim", "Sara", "Fatima", "Omar", "Yasmin"];
 const lastNames = ["Ali", "Rahman", "Noor", "Khan", "Ahmed", "Qureshi", "Hadi", "Farooq", "Saad", "Nazar"];
 const paymentStatuses = ["PAID", "PARTIAL", "UNPAID"];
-const travelerTypes = ["BACHELOR", "FAMILY"];
+const travelerTypes = ["BACHELOR", "FAMILY", "LADY"];
 
 function pick(list, index) {
   return list[index % list.length];
@@ -36,7 +36,7 @@ async function main() {
   }
 
   const provider =
-    providers.find((p) => p.providerName.toLowerCase() === "wadinoor") ||
+    providers.find((p) => p.isMain || p.providerName.toLowerCase() === "wadinoor") ||
     providers[0];
   const creator = users.find((u) => u.role === "ADMIN") || users[0];
 
@@ -64,7 +64,7 @@ async function main() {
       return {
         travelerName: `${pick(firstNames, seed)} ${pick(lastNames, seed + 3)}`,
         passportOrIqama: buildPassport(seed),
-        phoneNumber: travelerType === "BACHELOR" ? buildPhone(seed) : "",
+        phoneNumber: travelerType === "FAMILY" ? "" : buildPhone(seed),
         travelerType,
         tripId: trip.id,
         amountPaid,
@@ -74,6 +74,7 @@ async function main() {
         finalAmount,
         status: "ACTIVE",
         serviceProviderId: provider.id,
+        serviceDirection: provider.isMain ? null : (seed % 2 === 0 ? "INBOUND" : "OUTBOUND"),
         createdById: creator.id
       };
     });

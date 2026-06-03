@@ -20,13 +20,14 @@ const categories = [
   { label: "Jadwal Expense", value: "TRAVEL" },
   { label: "Ameer Expense", value: "GENERAL" },
   { label: "Administrative Expenses", value: "ADMINISTRATIVE" },
-  { label: "Other Expense", value: "OTHER" }
+  { label: "Miscellaneous Expense", value: "MISCELLANEOUS" }
 ];
 
 function categoryLabel(value) {
   if (value === "Jadwal") return "Jadwal Expense";
   if (value === "Ameer") return "Ameer Expense";
   if (value === "Administrative") return "Administrative Expenses";
+  if (value === "OTHER") return "Miscellaneous Expense";
   return categories.find((cat) => cat.value === value)?.label || value;
 }
 
@@ -76,16 +77,19 @@ const buildExpenseReport = (items) => {
       rows.push([
         serial++,
         formatDate(expense.date),
+        categoryLabel(expense.category),
+        expense.description || "-",
+        expense.serviceProvider?.providerName || "-",
         amount
       ]);
     });
-    rows.push(["", `TOTAL ${category.toUpperCase()}`, bucketTotal]);
+    rows.push(["", `TOTAL ${category.toUpperCase()}`, "", "", "", bucketTotal]);
     boldRows.push(rows.length - 1);
-    rows.push(["", "", ""]);
+    rows.push(["", "", "", "", "", ""]);
   });
 
   if (rows.length) {
-    rows.push(["", "TOTAL EXPENSE", grandTotal]);
+    rows.push(["", "TOTAL EXPENSE", "", "", "", grandTotal]);
     boldRows.push(rows.length - 1);
   }
 
@@ -98,13 +102,15 @@ export default function Expenses() {
   const { confirm, dialog } = useConfirm();
   const [expenses, setExpenses] = useState([]);
   const [trips, setTrips] = useState([]);
+  const [providers, setProviders] = useState([]);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({
     date: "",
     tripId: "",
     category: "BUS",
     description: "",
-    amount: ""
+    amount: "",
+    serviceProviderId: ""
   });
   const [editingId, setEditingId] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -115,12 +121,14 @@ export default function Expenses() {
   const [monthFilter, setMonthFilter] = useState("");
 
   const loadData = async () => {
-    const [expenseData, tripData] = await Promise.all([
+    const [expenseData, tripData, providerData] = await Promise.all([
       apiFetch("/expenses"),
-      apiFetch("/trips")
+      apiFetch("/trips"),
+      apiFetch("/providers")
     ]);
     setExpenses(expenseData);
     setTrips(tripData);
+    setProviders(providerData);
   };
 
   useEffect(() => {
@@ -133,7 +141,7 @@ export default function Expenses() {
 
   const filtered = useMemo(() => {
     return expenses.filter((expense) => {
-      const text = `${expense.description} ${expense.category}`.toLowerCase();
+      const text = `${expense.description} ${expense.category} ${expense.serviceProvider?.providerName || ""}`.toLowerCase();
       const searchMatch = text.includes(search.toLowerCase());
       if (!searchMatch) return false;
       if (!monthFilter) return true;
@@ -148,11 +156,6 @@ export default function Expenses() {
     return sortDir === "asc" ? items : items.reverse();
   }, [filtered, sortKey, sortDir]);
 
-  const selectedDateKey = useMemo(() => toDateKey(form.date), [form.date]);
-  const dateFilteredTrips = useMemo(() => {
-    if (!selectedDateKey) return trips;
-    return trips.filter((trip) => toDateKey(trip.tripDate) === selectedDateKey);
-  }, [trips, selectedDateKey]);
 
   const monthOptions = useMemo(() => {
     const monthMap = new Map();
@@ -172,13 +175,7 @@ export default function Expenses() {
       }));
   }, [expenses]);
 
-  useEffect(() => {
-    if (!form.tripId || !selectedDateKey) return;
-    const stillValid = dateFilteredTrips.some((trip) => String(trip.id) === String(form.tripId));
-    if (!stillValid) {
-      setForm((prev) => ({ ...prev, tripId: "" }));
-    }
-  }, [dateFilteredTrips, form.tripId, selectedDateKey]);
+  const isBusExpense = form.category === "BUS";
 
   const pageSize = 8;
   const pageCount = Math.ceil(sorted.length / pageSize) || 1;
@@ -186,7 +183,7 @@ export default function Expenses() {
   const allSelected = paged.length > 0 && paged.every((item) => selectedIds.includes(item.id));
 
   const resetForm = () => {
-    setForm({ date: "", tripId: "", category: "BUS", description: "", amount: "" });
+    setForm({ date: "", tripId: "", category: "BUS", description: "", amount: "", serviceProviderId: "" });
   };
 
   const handleSubmit = async (event) => {
@@ -225,7 +222,8 @@ export default function Expenses() {
       tripId: expense.tripId ? String(expense.tripId) : "",
       category: expense.category,
       description: expense.description,
-      amount: expense.amount
+      amount: expense.amount,
+      serviceProviderId: expense.serviceProviderId ? String(expense.serviceProviderId) : ""
     });
     setIsFormOpen(true);
   };
@@ -306,20 +304,20 @@ export default function Expenses() {
   }, [paged]);
 
   const handleExportPdf = () => {
-    exportToPdf("EXPENSE REPORT", ["S.No", "Date", "Amount"], expenseReport.rows, {
+    exportToPdf("EXPENSE REPORT", ["S.No", "Date", "Category", "Description", "Service Provider", "Amount"], expenseReport.rows, {
       headerTitle: "WADINOOR DAILY UMRAH SERVICE",
-      alignments: ["center", "left", "right"],
+      alignments: ["center", "left", "left", "left", "left", "right"],
       includeGenerated: false,
       boldRows: expenseReport.boldRows
     });
   };
 
   const handleExportExcel = () => {
-    exportToExcel("Expense-Report.xlsx", ["S.No", "Date", "Amount"], expenseReport.rows, {
+    exportToExcel("Expense-Report.xlsx", ["S.No", "Date", "Category", "Description", "Service Provider", "Amount"], expenseReport.rows, {
       headerTitle: "WADINOOR DAILY UMRAH SERVICE",
       title: "EXPENSE REPORT",
-      alignments: ["center", "left", "right"],
-      columnWidths: [{ wch: 6 }, { wch: 18 }, { wch: 14 }],
+      alignments: ["center", "left", "left", "left", "left", "right"],
+      columnWidths: [{ wch: 6 }, { wch: 18 }, { wch: 24 }, { wch: 34 }, { wch: 24 }, { wch: 14 }],
       includeGenerated: false,
       boldRows: expenseReport.boldRows
     });
@@ -356,9 +354,19 @@ export default function Expenses() {
             </div>
             <div>
               <label className="text-xs font-semibold text-sand-600">Trip (optional)</label>
-              <Select value={form.tripId} onChange={(e) => setForm({ ...form, tripId: e.target.value })}>
+              <Select
+                value={form.tripId}
+                onChange={(e) => {
+                  const trip = trips.find((item) => String(item.id) === String(e.target.value));
+                  setForm({
+                    ...form,
+                    tripId: e.target.value,
+                    date: trip?.tripDate ? toDateKey(trip.tripDate) : form.date
+                  });
+                }}
+              >
                 <option value="">Select trip</option>
-                {dateFilteredTrips.map((trip) => (
+                {trips.map((trip) => (
                   <option key={trip.id} value={trip.id}>
                     {trip.package?.packageName} ({formatDate(trip.tripDate)})
                   </option>
@@ -369,7 +377,11 @@ export default function Expenses() {
               <label className="text-xs font-semibold text-sand-600">Category</label>
               <Select
                 value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
+                onChange={(e) => setForm({
+                  ...form,
+                  category: e.target.value,
+                  serviceProviderId: e.target.value === "BUS" ? form.serviceProviderId : ""
+                })}
               >
                 {categories.map((cat) => (
                   <option key={cat.value} value={cat.value}>
@@ -378,6 +390,22 @@ export default function Expenses() {
                 ))}
               </Select>
             </div>
+            {isBusExpense ? (
+              <div>
+                <label className="text-xs font-semibold text-sand-600">Service Provider</label>
+                <Select
+                  value={form.serviceProviderId}
+                  onChange={(e) => setForm({ ...form, serviceProviderId: e.target.value })}
+                >
+                  <option value="">Select provider</option>
+                  {providers.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.providerName}{provider.isMain ? " (Main)" : ""}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+            ) : null}
             <div>
               <label className="text-xs font-semibold text-sand-600">Amount (SAR)</label>
               <Input
@@ -455,16 +483,18 @@ export default function Expenses() {
             </div>
           ) : null}
 
-          <Table className="min-w-[900px]">
+          <Table className="table-fixed">
             <TableHead>
               <TableRow>
-                <TableHeaderCell className="sticky left-0 z-20 w-10 bg-sand-100 border-r border-sand-200">
+                <TableHeaderCell className="w-10">
                   <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
                 </TableHeaderCell>
-                <TableHeaderCell onClick={() => toggleSort("date")} className="sticky left-10 z-20 bg-sand-100 border-r border-sand-200 cursor-pointer">Date</TableHeaderCell>
+                <TableHeaderCell onClick={() => toggleSort("date")} className="w-28 cursor-pointer">Date</TableHeaderCell>
+                <TableHeaderCell className="w-36">Category</TableHeaderCell>
                 <TableHeaderCell>Description</TableHeaderCell>
-                <TableHeaderCell onClick={() => toggleSort("amount")} className="cursor-pointer">Amount</TableHeaderCell>
-                <TableHeaderCell>Actions</TableHeaderCell>
+                <TableHeaderCell className="w-36">Provider</TableHeaderCell>
+                <TableHeaderCell onClick={() => toggleSort("amount")} className="w-28 cursor-pointer text-right">Amount</TableHeaderCell>
+                <TableHeaderCell className="w-36">Actions</TableHeaderCell>
               </TableRow>
             </TableHead>
             <tbody>
@@ -475,25 +505,27 @@ export default function Expenses() {
                 return (
                   <Fragment key={category}>
                     <TableRow key={`${category}-header`} className="bg-sand-50">
-                      <TableCell colSpan={5} className="text-xs font-semibold text-sand-700">
+                      <TableCell colSpan={7} className="text-xs font-semibold text-sand-700">
                         {category.toUpperCase()}
                       </TableCell>
                     </TableRow>
                     {bucket.map((expense) => (
                       <TableRow key={expense.id}>
-                        <TableCell className="sticky left-0 z-10 bg-white border-r border-sand-200 max-w-none">
+                        <TableCell className="max-w-none">
                           <input
                             type="checkbox"
                             checked={selectedIds.includes(expense.id)}
                             onChange={() => toggleSelect(expense.id)}
                           />
                         </TableCell>
-                        <TableCell className="sticky left-10 z-10 bg-white border-r border-sand-200">{formatDate(expense.date)}</TableCell>
+                        <TableCell>{formatDate(expense.date)}</TableCell>
+                        <TableCell>{categoryLabel(expense.category)}</TableCell>
                         <TableCell title={expense.description}>{expense.description}</TableCell>
-                        <TableCell>{formatCurrency(expense.amount)}</TableCell>
+                        <TableCell>{expense.serviceProvider?.providerName || "-"}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(expense.amount)}</TableCell>
                         <TableCell className="max-w-none">
                           {canEdit(expense) ? (
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <Button size="sm" variant="outline" onClick={() => handleEdit(expense)}>Edit</Button>
                               {user?.role === "ADMIN" ? (
                                 <Button size="sm" variant="outline" onClick={() => handleDelete(expense)}>Delete</Button>
@@ -506,10 +538,10 @@ export default function Expenses() {
                       </TableRow>
                     ))}
                     <TableRow key={`${category}-total`} className="bg-sand-50">
-                      <TableCell colSpan={3} className="text-right text-xs font-semibold text-sand-700">
+                      <TableCell colSpan={5} className="text-right text-xs font-semibold text-sand-700">
                         TOTAL {category.toUpperCase()}
                       </TableCell>
-                      <TableCell className="text-sm font-semibold">{formatCurrency(bucketTotal)}</TableCell>
+                      <TableCell className="text-right text-sm font-semibold">{formatCurrency(bucketTotal)}</TableCell>
                       <TableCell />
                     </TableRow>
                   </Fragment>
@@ -543,6 +575,3 @@ export default function Expenses() {
     </div>
   );
 }
-
-
-
