@@ -122,12 +122,12 @@ function StatCard({ title, value, subtitle, icon: Icon, tone = "oasis", trend, i
 
 function MiniStat({ label, value, trend, isLoading, children }) {
   return (
-    <div className="rounded-2xl border border-sand-200 bg-white/80 p-4 shadow-soft">
+    <div className="rounded-xl border border-sand-200 bg-white/80 p-3 shadow-soft">
       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sand-500">{label}</p>
       {isLoading ? (
-        <div className="mt-3 h-6 w-24 animate-pulse rounded-lg bg-sand-100" />
+        <div className="mt-2 h-5 w-20 animate-pulse rounded-lg bg-sand-100" />
       ) : (
-        <p className="mt-2 text-xl font-semibold text-ink">{value}</p>
+        <p className="mt-2 text-lg font-semibold text-ink">{value}</p>
       )}
       {children}
       <TrendPill trend={trend} className="mt-2" />
@@ -287,13 +287,21 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 md:grid-cols-3">
             <MiniStat
               label={`${latestMonth?.month || "Current month"} revenue`}
               value={formatCurrency(latestMonth?.revenue)}
               trend={revenueTrend}
               isLoading={isLoading}
             />
+            <MiniStat
+              label={`${latestMonth?.month || "Current month"} expenses`}
+              value={formatCurrency(latestMonth?.expenses)}
+              trend={expenseTrend}
+              isLoading={isLoading}
+            >
+              <p className="mt-2 text-xs text-sand-600">Operating spend this month</p>
+            </MiniStat>
             <MiniStat
               label={`${latestMonth?.month || "Current month"} profit`}
               value={formatCurrency(latestMonth?.profit)}
@@ -314,14 +322,6 @@ export default function Dashboard() {
                   <p className="mt-2 text-xs text-sand-600">{Math.abs(profitMargin).toFixed(1)}% margin</p>
                 </div>
               ) : null}
-            </MiniStat>
-            <MiniStat
-              label={`${latestMonth?.month || "Current month"} expenses`}
-              value={formatCurrency(latestMonth?.expenses)}
-              trend={expenseTrend}
-              isLoading={isLoading}
-            >
-              <p className="mt-2 text-xs text-sand-600">Operating spend this month</p>
             </MiniStat>
           </div>
         </div>
@@ -572,5 +572,4 @@ export default function Dashboard() {
     </div>
   );
 }
-
 
