@@ -182,10 +182,6 @@ router.post("/", authenticate, asyncHandler(async (req, res) => {
     return res.status(400).json({ message: "Invalid traveler type" });
   }
 
-  if (travelerType !== "FAMILY" && !phoneNumber) {
-    return res.status(400).json({ message: "Phone number is required for bachelor and lady travelers" });
-  }
-
   if (status && !allowedStatuses.includes(status)) {
     return res.status(400).json({ message: "Invalid traveler status" });
   }
@@ -321,10 +317,6 @@ router.put("/:id", authenticate, asyncHandler(async (req, res) => {
 
   if (canEditTravelers && travelerType && !allowedTravelerTypes.includes(travelerType)) {
     return res.status(400).json({ message: "Invalid traveler type" });
-  }
-
-  if (canEditTravelers && travelerType && travelerType !== "FAMILY" && !phoneNumber) {
-    return res.status(400).json({ message: "Phone number is required for bachelor and lady travelers" });
   }
 
   if (canEditTravelers && status && !allowedStatuses.includes(status)) {

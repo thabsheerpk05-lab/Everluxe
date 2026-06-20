@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Upload } from "lucide-react";
+import * as XLSX from "xlsx";
 import { apiFetch } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.jsx";
@@ -20,8 +22,155 @@ const travelerTypes = [
   { value: "BACHELOR", label: "Bachelor" },
   { value: "LADY", label: "Lady" }
 ];
-const soloTravelerTypes = ["BACHELOR", "LADY"];
 const serviceDirections = ["INBOUND", "OUTBOUND"];
+const importColumnAliases = {
+  travelerName: ["traveler name", "traveller name", "name", "traveler", "traveller", "passenger name"],
+  passportOrIqama: ["passport or iqama", "passport/iqama", "passport iqama", "passport", "iqama", "id number"],
+  phoneNumber: ["phone number", "phone", "mobile", "contact", "contact number"],
+  travelerType: ["traveler type", "traveller type", "type", "category"],
+  familyMembers: ["family members", "members", "family member names", "co passengers", "copassengers"],
+  familyPassports: ["family passports", "family passport/iqama", "member passports", "member iqama"],
+  amountPaid: ["amount paid", "paid", "payment amount"],
+  paymentMethod: ["payment method", "method"],
+  extraRoomCharge: ["extra room charge", "extra room", "room charge"],
+  customPrice: ["custom price", "final price", "price", "discount amount"],
+  status: ["status"]
+};
+
+const normalizeImportHeader = (value) => String(value || "")
+  .toLowerCase()
+  .replace(/[_-]+/g, " ")
+  .replace(/[^\w\s/]/g, "")
+  .replace(/\s+/g, " ")
+  .trim();
+
+const cleanImportValue = (value) => {
+  const text = String(value ?? "").trim();
+  return /^'+$/.test(text) ? "" : text;
+};
+
+const getImportValue = (row, aliases) => {
+  const entries = Object.entries(row || {});
+  for (const [key, value] of entries) {
+    const normalizedKey = normalizeImportHeader(key);
+    if (aliases.includes(normalizedKey)) {
+      return cleanImportValue(value);
+    }
+  }
+  return "";
+};
+
+const normalizeImportType = (value) => {
+  const normalized = String(value || "BACHELOR").trim().toUpperCase();
+  const familyMatch = normalized.match(/^F(?:AMILY)?\s*(\d+)?$/);
+  if (familyMatch) {
+    return "FAMILY";
+  }
+  if (normalized === "B" || normalized === "BACHELOUR" || normalized === "BACHELOR") return "BACHELOR";
+  if (normalized === "L" || normalized === "LADY") return "LADY";
+  if (["FAMILY", "BACHELOR", "LADY"].includes(normalized)) return normalized;
+  if (normalized === "SINGLE" || normalized === "MALE") return "BACHELOR";
+  if (normalized === "FEMALE" || normalized === "WOMAN") return "LADY";
+  return normalized;
+};
+
+const parseImportType = (value) => {
+  const raw = String(value || "").trim();
+  const normalized = raw.toUpperCase();
+  const familyMatch = normalized.match(/^F(?:AMILY)?\s*(\d+)?$/);
+  if (familyMatch) {
+    return {
+      raw,
+      travelerType: "FAMILY",
+      familyCount: Math.max(Number(familyMatch[1] || 1), 1),
+      isContinuation: false
+    };
+  }
+  return {
+    raw,
+    travelerType: normalizeImportType(raw),
+    familyCount: 1,
+    isContinuation: !/[A-Z0-9]/i.test(raw)
+  };
+};
+
+const normalizeImportStatus = (value) => {
+  const normalized = String(value || "ACTIVE").trim().toUpperCase();
+  return normalized || "ACTIVE";
+};
+
+const parseImportAmount = (value) => {
+  const normalized = String(value || "").replace(/,/g, "").trim();
+  if (!normalized) return "0";
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? String(parsed) : "0";
+};
+
+const splitImportList = (value) => String(value || "")
+  .split(/\r?\n|;|,/)
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+const parseImportFamilyMembers = (row) => {
+  const phoneValue = getImportValue(row, importColumnAliases.phoneNumber);
+  const memberSource = getImportValue(row, importColumnAliases.familyMembers) || (phoneValue.includes(",") ? phoneValue : "");
+  const memberValues = splitImportList(memberSource);
+  const passportValues = splitImportList(getImportValue(row, importColumnAliases.familyPassports));
+  return memberValues
+    .map((value, index) => {
+      const parts = value.split(/\s+\|\s+|\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+      const name = parts[0] || value;
+      const passportOrIqama = parts[1] || passportValues[index] || "";
+      return { name, passportOrIqama };
+    })
+    .filter((member) => member.name);
+};
+
+const parseImportRecords = (rows) => {
+  const records = [];
+  const sourceRows = rows || [];
+  let index = 0;
+
+  while (index < sourceRows.length) {
+    const row = sourceRows[index] || {};
+    const isBlank = Object.values(row).every((value) => !String(value || "").trim());
+    if (isBlank) {
+      index += 1;
+      continue;
+    }
+
+    const typeMeta = parseImportType(getImportValue(row, importColumnAliases.travelerType));
+    if (typeMeta.isContinuation) {
+      index += 1;
+      continue;
+    }
+
+    const familyMembers = typeMeta.travelerType === "FAMILY" ? parseImportFamilyMembers(row) : [];
+    let consumedRows = 1;
+    if (typeMeta.travelerType === "FAMILY" && familyMembers.length < Math.max(typeMeta.familyCount - 1, 0)) {
+      const missingMembers = Math.max(typeMeta.familyCount - 1 - familyMembers.length, 0);
+      for (let offset = 1; offset <= missingMembers; offset += 1) {
+        const memberRow = sourceRows[index + offset] || {};
+        const memberName = getImportValue(memberRow, importColumnAliases.travelerName);
+        const memberPassport = getImportValue(memberRow, importColumnAliases.passportOrIqama);
+        if (memberName || memberPassport) {
+          familyMembers.push({ name: memberName, passportOrIqama: memberPassport });
+        }
+        consumedRows += 1;
+      }
+    }
+
+    records.push({
+      rowNumber: index + 2,
+      row,
+      typeMeta,
+      familyMembers
+    });
+    index += consumedRows;
+  }
+
+  return records;
+};
 
   const sorters = {
     name: (a, b) => a.travelerName.localeCompare(b.travelerName),
@@ -95,6 +244,14 @@ export default function Travelers() {
   const [bulkProviderId, setBulkProviderId] = useState("");
   const [bulkServiceDirection, setBulkServiceDirection] = useState("INBOUND");
   const travelerNameRef = useRef(null);
+  const importFileRef = useRef(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [importTripId, setImportTripId] = useState("");
+  const [importProviderId, setImportProviderId] = useState("");
+  const [importServiceDirection, setImportServiceDirection] = useState("");
+  const [importFileName, setImportFileName] = useState("");
+  const [importRawRows, setImportRawRows] = useState([]);
+  const [isImporting, setIsImporting] = useState(false);
   const [form, setForm] = useState({
     travelerName: "",
     passportOrIqama: "",
@@ -223,11 +380,6 @@ export default function Travelers() {
 
     if (isOtherProvider && !form.serviceDirection) {
       toast({ title: "Inbound or outbound is required for other service providers.", variant: "error" });
-      return;
-    }
-
-    if (soloTravelerTypes.includes(form.travelerType) && !form.phoneNumber) {
-      toast({ title: "Phone number is required for bachelor and lady travelers.", variant: "error" });
       return;
     }
 
@@ -399,6 +551,50 @@ export default function Travelers() {
     await loadTravelers();
   };
 
+  const openImport = () => {
+    setImportTripId(tripFilter || "");
+    setImportProviderId(defaultProviderId || "");
+    setImportServiceDirection("");
+    setImportFileName("");
+    setImportRawRows([]);
+    if (importFileRef.current) {
+      importFileRef.current.value = "";
+    }
+    setIsImportOpen(true);
+  };
+
+  const closeImport = () => {
+    if (isImporting) return;
+    setIsImportOpen(false);
+    setImportFileName("");
+    setImportRawRows([]);
+    if (importFileRef.current) {
+      importFileRef.current.value = "";
+    }
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    setImportRawRows([]);
+    setImportFileName(file?.name || "");
+    if (!file) return;
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+      setImportRawRows(rows);
+      if (!rows.length) {
+        toast({ title: "No traveler rows found in this file.", variant: "error" });
+      }
+    } catch (err) {
+      setImportFileName("");
+      toast({ title: "Could not read this Excel file.", variant: "error" });
+    }
+  };
+
   const toggleSelect = (id) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((value) => value !== id) : [...prev, id]));
   };
@@ -448,9 +644,126 @@ export default function Travelers() {
   const canEdit = (traveler) => user?.role === "ADMIN" || traveler.createdById === user?.id || isAmeerStaff;
 
   const selectedTrip = trips.find((trip) => String(trip.id) === String(form.tripId));
+  const importSelectedProvider = findProvider(importProviderId);
+  const isImportOtherProvider = Boolean(importSelectedProvider && !importSelectedProvider.isMain);
   const tripOptions = editingId
     ? trips
     : trips.filter((trip) => trip.status !== "FINISHED");
+  const importTripOptions = trips.filter((trip) => trip.status !== "FINISHED");
+  const importRows = useMemo(() => {
+    const seenPassports = new Set();
+    return parseImportRecords(importRawRows)
+      .map(({ row, rowNumber, typeMeta, familyMembers }) => {
+        const travelerName = getImportValue(row, importColumnAliases.travelerName);
+        const passportOrIqama = getImportValue(row, importColumnAliases.passportOrIqama);
+        const rawPhoneNumber = getImportValue(row, importColumnAliases.phoneNumber);
+        const travelerType = typeMeta.travelerType;
+        const phoneNumber = travelerType === "FAMILY" && rawPhoneNumber.includes(",") ? "" : rawPhoneNumber;
+        const familyCount = travelerType === "FAMILY" ? Math.max(typeMeta.familyCount, 1 + familyMembers.length) : 1;
+        const amountPaid = parseImportAmount(getImportValue(row, importColumnAliases.amountPaid));
+        const extraRoomCharge = parseImportAmount(getImportValue(row, importColumnAliases.extraRoomCharge));
+        const customPrice = parseImportAmount(getImportValue(row, importColumnAliases.customPrice));
+        const status = normalizeImportStatus(getImportValue(row, importColumnAliases.status));
+        const paymentMethod = getImportValue(row, importColumnAliases.paymentMethod) || "Cash";
+        const errors = [];
+
+        if (!importTripId) errors.push("Select a trip");
+        if (!travelerName) errors.push("Traveler name is required");
+        if (!passportOrIqama) errors.push("Passport/Iqama is required");
+        if (!travelerTypes.some((type) => type.value === travelerType)) errors.push("Type must be FAMILY, BACHELOR, or LADY");
+        if (travelerType === "FAMILY" && familyMembers.length !== Math.max(familyCount - 1, 0)) {
+          errors.push(`Expected ${Math.max(familyCount - 1, 0)} family member rows`);
+        }
+        if (!travelerStatuses.includes(status)) errors.push("Status must be ACTIVE or CANCELLED");
+        if (isImportOtherProvider && !importServiceDirection) errors.push("Direction is required for other provider");
+
+        const passportKey = passportOrIqama.toLowerCase();
+        if (passportKey) {
+          if (seenPassports.has(passportKey)) {
+            errors.push("Duplicate passport/Iqama in file");
+          }
+          seenPassports.add(passportKey);
+        }
+
+        return {
+          rowNumber,
+          travelerName,
+          passportOrIqama,
+          phoneNumber,
+          travelerType,
+          familyMembers,
+          familyCount,
+          amountPaid,
+          paymentMethod,
+          extraRoomCharge,
+          customPrice,
+          status,
+          errors,
+          payload: {
+            travelerName,
+            passportOrIqama,
+            phoneNumber,
+            travelerType,
+            familyCount,
+            familyMembers,
+            tripId: importTripId,
+            amountPaid,
+            paymentMethod,
+            extraRoomCharge,
+            customPrice,
+            status,
+            serviceProviderId: importProviderId,
+            serviceDirection: isImportOtherProvider ? importServiceDirection : ""
+          }
+        };
+      });
+  }, [importRawRows, importTripId, importProviderId, importServiceDirection, isImportOtherProvider]);
+  const importValidRows = importRows.filter((row) => !row.errors.length);
+  const importErrorCount = importRows.reduce((sum, row) => sum + row.errors.length, 0);
+
+  const handleImportSubmit = async () => {
+    if (!importRows.length) {
+      toast({ title: "Upload an Excel or CSV file first.", variant: "error" });
+      return;
+    }
+    if (!importValidRows.length || importErrorCount) {
+      toast({ title: "Fix the highlighted upload issues before importing.", variant: "error" });
+      return;
+    }
+
+    const confirmed = await confirm({
+      title: `Import ${importValidRows.length} travelers?`,
+      description: "This will add the previewed rows to the selected trip.",
+      confirmLabel: "Import travelers",
+      tone: "warning"
+    });
+    if (!confirmed) return;
+
+    setIsImporting(true);
+    const failedRows = [];
+    let createdCount = 0;
+    for (const row of importValidRows) {
+      try {
+        await apiFetch("/travelers", {
+          method: "POST",
+          body: JSON.stringify(row.payload)
+        });
+        createdCount += 1;
+      } catch (err) {
+        failedRows.push(`Row ${row.rowNumber}: ${err.message}`);
+      }
+    }
+    setIsImporting(false);
+    if (createdCount) {
+      await loadTravelers();
+    }
+    if (failedRows.length) {
+      toast({ title: `${createdCount} imported, ${failedRows.length} failed. ${failedRows[0]}`, variant: "error" });
+      return;
+    }
+    toast({ title: `${createdCount} travelers imported successfully.`, variant: "success" });
+    closeImport();
+  };
   const normalizedFamilyMembers = form.travelerType === "FAMILY"
     ? (form.familyMembers || []).map(normalizeFamilyMember).filter(Boolean)
     : [];
@@ -471,7 +784,13 @@ export default function Travelers() {
           <h1 className="font-display text-3xl">Travelers</h1>
           <p className="text-sm text-sand-600">Add travelers and capture payments.</p>
         </div>
-        <Button onClick={openCreate}>Add Traveler</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={openImport}>
+            <Upload size={16} className="mr-2" />
+            Import Excel
+          </Button>
+          <Button onClick={openCreate}>Add Traveler</Button>
+        </div>
       </div>
 
       <Modal open={isFormOpen} onClose={closeForm} size="xl">
@@ -500,7 +819,7 @@ export default function Travelers() {
               <Input
                 value={form.phoneNumber}
                 onChange={(e) => setForm({ ...form, phoneNumber: e.target.value })}
-                placeholder={form.travelerType === "FAMILY" ? "Optional for family" : "Required for bachelor/lady"}
+                placeholder="Optional"
               />
             </div>
             <div>
@@ -608,6 +927,137 @@ export default function Travelers() {
               <Button type="button" variant="outline" onClick={closeForm}>Close</Button>
             </div>
           </form>
+        </ModalBody>
+      </Modal>
+
+      <Modal open={isImportOpen} onClose={closeImport} size="xl">
+        <ModalHeader>
+          <ModalTitle>Import Travelers</ModalTitle>
+        </ModalHeader>
+        <ModalBody>
+          <div className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-xs font-semibold text-sand-600">Trip</label>
+                <Select value={importTripId} onChange={(e) => setImportTripId(e.target.value)}>
+                  <option value="">Select trip</option>
+                  {importTripOptions.map((trip) => (
+                    <option key={trip.id} value={trip.id}>
+                      {trip.package?.packageName} ({formatDate(trip.tripDate)})
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-sand-600">Excel / CSV File</label>
+                <Input
+                  ref={importFileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  onChange={handleImportFile}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-sand-600">Service Provider</label>
+                <Select
+                  value={importProviderId}
+                  onChange={(e) => {
+                    const nextProvider = findProvider(e.target.value);
+                    setImportProviderId(e.target.value);
+                    setImportServiceDirection(nextProvider && !nextProvider.isMain ? importServiceDirection || "INBOUND" : "");
+                  }}
+                >
+                  <option value="">No provider</option>
+                  {providers.map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.providerName}{provider.isMain ? " (Main)" : ""}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              {isImportOtherProvider ? (
+                <div>
+                  <label className="text-xs font-semibold text-sand-600">Inbound / Outbound</label>
+                  <Select
+                    value={importServiceDirection}
+                    onChange={(e) => setImportServiceDirection(e.target.value)}
+                  >
+                    {serviceDirections.map((direction) => (
+                      <option key={direction} value={direction}>{direction}</option>
+                    ))}
+                  </Select>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-lg border border-sand-200 bg-sand-50 p-3 text-xs text-sand-700">
+              Required columns: Traveler Name, Passport/Iqama, Traveler Type. Optional columns: Phone Number, Family Members, Family Passports, Amount Paid, Payment Method, Extra Room Charge, Custom Price, Status.
+            </div>
+
+            {importFileName ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-ink">{importFileName}</p>
+                <p className="text-xs text-sand-600">
+                  {importValidRows.length} ready, {importRows.length - importValidRows.length} need attention
+                </p>
+              </div>
+            ) : null}
+
+            {importRows.length ? (
+              <div className="overflow-x-auto rounded-lg border border-sand-200">
+                <Table className="min-w-[900px]">
+                  <TableHead>
+                    <TableRow>
+                      <TableHeaderCell>Row</TableHeaderCell>
+                      <TableHeaderCell>Name</TableHeaderCell>
+                      <TableHeaderCell>Passport/Iqama</TableHeaderCell>
+                      <TableHeaderCell>Phone</TableHeaderCell>
+                      <TableHeaderCell>Type</TableHeaderCell>
+                      <TableHeaderCell>Family Count</TableHeaderCell>
+                      <TableHeaderCell>Paid</TableHeaderCell>
+                      <TableHeaderCell>Issues</TableHeaderCell>
+                    </TableRow>
+                  </TableHead>
+                  <tbody>
+                    {importRows.slice(0, 50).map((row) => (
+                      <TableRow key={row.rowNumber}>
+                        <TableCell>{row.rowNumber}</TableCell>
+                        <TableCell>{row.travelerName || "-"}</TableCell>
+                        <TableCell>{row.passportOrIqama || "-"}</TableCell>
+                        <TableCell>{row.phoneNumber || "-"}</TableCell>
+                        <TableCell>{row.travelerType || "-"}</TableCell>
+                        <TableCell>{row.familyCount}</TableCell>
+                        <TableCell>{formatCurrency(row.amountPaid)}</TableCell>
+                        <TableCell>
+                          {row.errors.length ? (
+                            <span className="text-xs font-semibold text-red-600">{row.errors.join(", ")}</span>
+                          ) : (
+                            <span className="text-xs font-semibold text-emerald-700">Ready</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </tbody>
+                </Table>
+                {importRows.length > 50 ? (
+                  <p className="border-t border-sand-200 px-3 py-2 text-xs text-sand-600">
+                    Showing first 50 rows of {importRows.length}.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={closeImport} disabled={isImporting}>Close</Button>
+              <Button
+                type="button"
+                onClick={handleImportSubmit}
+                disabled={isImporting || !importRows.length || Boolean(importErrorCount)}
+              >
+                {isImporting ? "Importing..." : `Import ${importValidRows.length} Travelers`}
+              </Button>
+            </div>
+          </div>
         </ModalBody>
       </Modal>
 
