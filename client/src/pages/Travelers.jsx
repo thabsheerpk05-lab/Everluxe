@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Upload } from "lucide-react";
 import * as XLSX from "xlsx";
 import { apiFetch } from "../api/client.js";
@@ -30,11 +31,10 @@ const importColumnAliases = {
   travelerType: ["traveler type", "traveller type", "type", "category"],
   familyMembers: ["family members", "members", "family member names", "co passengers", "copassengers"],
   familyPassports: ["family passports", "family passport/iqama", "member passports", "member iqama"],
-  amountPaid: ["amount paid", "paid", "payment amount"],
-  paymentMethod: ["payment method", "method"],
-  extraRoomCharge: ["extra room charge", "extra room", "room charge"],
+  providerName: ["provider", "provider name", "service provider", "agency"],
+  serviceDirection: ["direction", "service direction", "inbound outbound", "inbound/outbound"],
   customPrice: ["custom price", "final price", "price", "discount amount"],
-  status: ["status"]
+  extraRoomCharge: ["extra room charge", "extra room", "room charge"]
 };
 
 const normalizeImportHeader = (value) => String(value || "")
@@ -48,6 +48,11 @@ const cleanImportValue = (value) => {
   const text = String(value ?? "").trim();
   return /^'+$/.test(text) ? "" : text;
 };
+
+const normalizeLookupValue = (value) => cleanImportValue(value)
+  .toLowerCase()
+  .replace(/\s+/g, " ")
+  .trim();
 
 const getImportValue = (row, aliases) => {
   const entries = Object.entries(row || {});
@@ -106,6 +111,13 @@ const parseImportAmount = (value) => {
   return Number.isFinite(parsed) ? String(parsed) : "0";
 };
 
+const normalizeImportDirection = (value) => {
+  const normalized = normalizeLookupValue(value).toUpperCase();
+  if (normalized === "IN" || normalized === "INBOUND") return "INBOUND";
+  if (normalized === "OUT" || normalized === "OUTBOUND") return "OUTBOUND";
+  return normalized;
+};
+
 const splitImportList = (value) => String(value || "")
   .split(/\r?\n|;|,/)
   .map((item) => item.trim())
@@ -161,7 +173,7 @@ const parseImportRecords = (rows) => {
     }
 
     records.push({
-      rowNumber: index + 2,
+      rowNumber: row.__rowNumber || index + 2,
       row,
       typeMeta,
       familyMembers
@@ -170,6 +182,56 @@ const parseImportRecords = (rows) => {
   }
 
   return records;
+};
+
+const findImportHeaderIndex = (rows) => (
+  rows.findIndex((row) => {
+    const headers = (row || []).map(normalizeImportHeader);
+    return headers.some((header) => importColumnAliases.travelerName.includes(header))
+      && headers.some((header) => importColumnAliases.travelerType.includes(header))
+      && headers.some((header) => importColumnAliases.passportOrIqama.includes(header));
+  })
+);
+
+const mapImportRows = (rows) => {
+  const headerIndex = findImportHeaderIndex(rows);
+  if (headerIndex < 0) return [];
+  const headers = rows[headerIndex].map((header, index) => cleanImportValue(header) || `Column ${index + 1}`);
+  return rows.slice(headerIndex + 1).map((row, rowIndex) => {
+    const record = headers.reduce((nextRecord, header, index) => {
+      nextRecord[header] = row[index] ?? "";
+      return nextRecord;
+    }, {});
+    Object.defineProperty(record, "__rowNumber", {
+      value: headerIndex + rowIndex + 2,
+      enumerable: false
+    });
+    return record;
+  });
+};
+
+const importFieldFallbackLabels = {
+  travelerName: "NAME",
+  passportOrIqama: "IQAMA",
+  phoneNumber: "PHONE",
+  travelerType: "TYPE",
+  providerName: "PROVIDER",
+  serviceDirection: "DIRECTION",
+  customPrice: "CUSTOM PRICE",
+  extraRoomCharge: "EXTRA ROOM CHARGE"
+};
+
+const setImportRowValue = (row, field, value) => {
+  const aliases = importColumnAliases[field] || [];
+  const existingKey = Object.keys(row || {}).find((key) => aliases.includes(normalizeImportHeader(key)));
+  const next = { ...(row || {}), [existingKey || importFieldFallbackLabels[field] || field]: value };
+  if (row?.__rowNumber) {
+    Object.defineProperty(next, "__rowNumber", {
+      value: row.__rowNumber,
+      enumerable: false
+    });
+  }
+  return next;
 };
 
   const sorters = {
@@ -227,6 +289,8 @@ export default function Travelers() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { confirm, dialog } = useConfirm();
+  const [searchParams] = useSearchParams();
+  const routeTripId = searchParams.get("tripId");
   const perms = parsePermissions(user?.permissions);
   const [trips, setTrips] = useState([]);
   const [providers, setProviders] = useState([]);
@@ -247,8 +311,6 @@ export default function Travelers() {
   const importFileRef = useRef(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [importTripId, setImportTripId] = useState("");
-  const [importProviderId, setImportProviderId] = useState("");
-  const [importServiceDirection, setImportServiceDirection] = useState("");
   const [importFileName, setImportFileName] = useState("");
   const [importRawRows, setImportRawRows] = useState([]);
   const [isImporting, setIsImporting] = useState(false);
@@ -303,6 +365,12 @@ export default function Travelers() {
   }, []);
 
   useEffect(() => {
+    if (routeTripId) {
+      setTripFilter(routeTripId);
+    }
+  }, [routeTripId]);
+
+  useEffect(() => {
     loadTravelers();
   }, [search, tripFilter, dateFilters.from, dateFilters.to]);
 
@@ -346,10 +414,15 @@ export default function Travelers() {
   const findProvider = (id) => providers.find((provider) => String(provider.id) === String(id));
   const selectedProvider = findProvider(form.serviceProviderId);
   const isOtherProvider = Boolean(selectedProvider && !selectedProvider.isMain);
+  const getDirectionForProvider = (providerId, fallback = "") => {
+    const provider = findProvider(providerId);
+    return provider && !provider.isMain ? fallback || "INBOUND" : "";
+  };
   const bulkSelectedProvider = findProvider(bulkProviderId);
   const isBulkOtherProvider = Boolean(bulkSelectedProvider && !bulkSelectedProvider.isMain);
 
   const resetForm = (providerId = defaultProviderId || form.serviceProviderId) => {
+    const nextDirection = getDirectionForProvider(providerId, form.serviceDirection);
     setForm({
       travelerName: "",
       passportOrIqama: "",
@@ -365,7 +438,7 @@ export default function Travelers() {
       customPrice: "0",
       status: "ACTIVE",
       serviceProviderId: providerId || "",
-      serviceDirection: ""
+      serviceDirection: nextDirection
     });
   };
 
@@ -378,10 +451,7 @@ export default function Travelers() {
       return;
     }
 
-    if (isOtherProvider && !form.serviceDirection) {
-      toast({ title: "Inbound or outbound is required for other service providers.", variant: "error" });
-      return;
-    }
+    const resolvedServiceDirection = isOtherProvider ? form.serviceDirection || "INBOUND" : "";
 
     const normalizedMembers = form.travelerType === "FAMILY"
       ? (form.familyMembers || []).map(normalizeFamilyMember).filter(Boolean)
@@ -396,7 +466,7 @@ export default function Travelers() {
       ...rest,
       familyCount: computedFamilyCount,
       familyMembers: payloadMembers,
-      serviceDirection: isOtherProvider ? form.serviceDirection : ""
+      serviceDirection: resolvedServiceDirection
     };
 
     try {
@@ -553,8 +623,6 @@ export default function Travelers() {
 
   const openImport = () => {
     setImportTripId(tripFilter || "");
-    setImportProviderId(defaultProviderId || "");
-    setImportServiceDirection("");
     setImportFileName("");
     setImportRawRows([]);
     if (importFileRef.current) {
@@ -584,10 +652,11 @@ export default function Travelers() {
       const workbook = XLSX.read(data, { type: "array" });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+      const sheetRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", raw: false });
+      const rows = mapImportRows(sheetRows);
       setImportRawRows(rows);
       if (!rows.length) {
-        toast({ title: "No traveler rows found in this file.", variant: "error" });
+        toast({ title: "No traveler header row found in this file.", variant: "error" });
       }
     } catch (err) {
       setImportFileName("");
@@ -644,12 +713,16 @@ export default function Travelers() {
   const canEdit = (traveler) => user?.role === "ADMIN" || traveler.createdById === user?.id || isAmeerStaff;
 
   const selectedTrip = trips.find((trip) => String(trip.id) === String(form.tripId));
-  const importSelectedProvider = findProvider(importProviderId);
-  const isImportOtherProvider = Boolean(importSelectedProvider && !importSelectedProvider.isMain);
   const tripOptions = editingId
     ? trips
     : trips.filter((trip) => trip.status !== "FINISHED");
   const importTripOptions = trips.filter((trip) => trip.status !== "FINISHED");
+  const providerLookup = useMemo(() => (
+    new Map(providers.map((provider) => [normalizeLookupValue(provider.providerName), provider]))
+  ), [providers]);
+  const mainProvider = useMemo(() => (
+    providers.find((provider) => provider.isMain) || providers.find((provider) => normalizeLookupValue(provider.providerName) === "wadinoor")
+  ), [providers]);
   const importRows = useMemo(() => {
     const seenPassports = new Set();
     return parseImportRecords(importRawRows)
@@ -660,11 +733,12 @@ export default function Travelers() {
         const travelerType = typeMeta.travelerType;
         const phoneNumber = travelerType === "FAMILY" && rawPhoneNumber.includes(",") ? "" : rawPhoneNumber;
         const familyCount = travelerType === "FAMILY" ? Math.max(typeMeta.familyCount, 1 + familyMembers.length) : 1;
-        const amountPaid = parseImportAmount(getImportValue(row, importColumnAliases.amountPaid));
         const extraRoomCharge = parseImportAmount(getImportValue(row, importColumnAliases.extraRoomCharge));
         const customPrice = parseImportAmount(getImportValue(row, importColumnAliases.customPrice));
-        const status = normalizeImportStatus(getImportValue(row, importColumnAliases.status));
-        const paymentMethod = getImportValue(row, importColumnAliases.paymentMethod) || "Cash";
+        const providerName = getImportValue(row, importColumnAliases.providerName);
+        const providerKey = normalizeLookupValue(providerName);
+        const resolvedProvider = providerKey ? providerLookup.get(providerKey) : mainProvider;
+        const serviceDirection = normalizeImportDirection(getImportValue(row, importColumnAliases.serviceDirection));
         const errors = [];
 
         if (!importTripId) errors.push("Select a trip");
@@ -674,8 +748,10 @@ export default function Travelers() {
         if (travelerType === "FAMILY" && familyMembers.length !== Math.max(familyCount - 1, 0)) {
           errors.push(`Expected ${Math.max(familyCount - 1, 0)} family member rows`);
         }
-        if (!travelerStatuses.includes(status)) errors.push("Status must be ACTIVE or CANCELLED");
-        if (isImportOtherProvider && !importServiceDirection) errors.push("Direction is required for other provider");
+        if (providerKey && !resolvedProvider) errors.push(`Choose existing provider for "${providerName}"`);
+        if (!providerKey && !mainProvider) errors.push("Add a main provider or enter provider names");
+        if (resolvedProvider && !resolvedProvider.isMain && !serviceDirection) errors.push("Direction is required for other provider");
+        if (serviceDirection && !serviceDirections.includes(serviceDirection)) errors.push("Direction must be INBOUND or OUTBOUND");
 
         const passportKey = passportOrIqama.toLowerCase();
         if (passportKey) {
@@ -693,11 +769,12 @@ export default function Travelers() {
           travelerType,
           familyMembers,
           familyCount,
-          amountPaid,
-          paymentMethod,
           extraRoomCharge,
           customPrice,
-          status,
+          providerId: resolvedProvider?.id ? String(resolvedProvider.id) : "",
+          providerName: providerName || mainProvider?.providerName || "",
+          isProviderMain: Boolean(resolvedProvider?.isMain),
+          serviceDirection: resolvedProvider && !resolvedProvider.isMain ? serviceDirection : "",
           errors,
           payload: {
             travelerName,
@@ -707,19 +784,38 @@ export default function Travelers() {
             familyCount,
             familyMembers,
             tripId: importTripId,
-            amountPaid,
-            paymentMethod,
+            amountPaid: "0",
+            paymentMethod: "Cash",
             extraRoomCharge,
             customPrice,
-            status,
-            serviceProviderId: importProviderId,
-            serviceDirection: isImportOtherProvider ? importServiceDirection : ""
+            status: "ACTIVE",
+            serviceProviderId: resolvedProvider?.id ? String(resolvedProvider.id) : "",
+            serviceDirection: resolvedProvider && !resolvedProvider.isMain ? serviceDirection : ""
           }
         };
       });
-  }, [importRawRows, importTripId, importProviderId, importServiceDirection, isImportOtherProvider]);
+  }, [importRawRows, importTripId, providerLookup, mainProvider]);
   const importValidRows = importRows.filter((row) => !row.errors.length);
   const importErrorCount = importRows.reduce((sum, row) => sum + row.errors.length, 0);
+
+  const updateImportRow = (rowNumber, field, value) => {
+    setImportRawRows((prev) => prev.map((row) => (
+      row.__rowNumber === rowNumber ? setImportRowValue(row, field, value) : row
+    )));
+  };
+
+  const applyProviderToImportRow = (rowNumber, providerId) => {
+    const provider = providers.find((item) => String(item.id) === String(providerId));
+    setImportRawRows((prev) => prev.map((row) => {
+      if (row.__rowNumber !== rowNumber) return row;
+      const withProvider = setImportRowValue(row, "providerName", provider?.providerName || "");
+      if (!provider || provider.isMain) {
+        return setImportRowValue(withProvider, "serviceDirection", "");
+      }
+      const direction = getImportValue(row, importColumnAliases.serviceDirection) || "INBOUND";
+      return setImportRowValue(withProvider, "serviceDirection", direction);
+    }));
+  };
 
   const handleImportSubmit = async () => {
     if (!importRows.length) {
@@ -911,7 +1007,26 @@ export default function Travelers() {
               </div>
             ) : null}
             <div>
-              <label className="text-xs font-semibold text-sand-600">Final Amount (Seasonal)</label>
+              <label className="text-xs font-semibold text-sand-600">Custom Price</label>
+              <Input
+                type="number"
+                min="0"
+                value={form.customPrice}
+                onChange={(e) => setForm({ ...form, customPrice: e.target.value })}
+                placeholder="Use trip price if empty"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-sand-600">Extra Room Charge</label>
+              <Input
+                type="number"
+                min="0"
+                value={form.extraRoomCharge}
+                onChange={(e) => setForm({ ...form, extraRoomCharge: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-sand-600">Final Amount</label>
               <Input value={finalAmount} readOnly />
             </div>
             <div>
@@ -957,41 +1072,10 @@ export default function Travelers() {
                   onChange={handleImportFile}
                 />
               </div>
-              <div>
-                <label className="text-xs font-semibold text-sand-600">Service Provider</label>
-                <Select
-                  value={importProviderId}
-                  onChange={(e) => {
-                    const nextProvider = findProvider(e.target.value);
-                    setImportProviderId(e.target.value);
-                    setImportServiceDirection(nextProvider && !nextProvider.isMain ? importServiceDirection || "INBOUND" : "");
-                  }}
-                >
-                  <option value="">No provider</option>
-                  {providers.map((provider) => (
-                    <option key={provider.id} value={provider.id}>
-                      {provider.providerName}{provider.isMain ? " (Main)" : ""}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              {isImportOtherProvider ? (
-                <div>
-                  <label className="text-xs font-semibold text-sand-600">Inbound / Outbound</label>
-                  <Select
-                    value={importServiceDirection}
-                    onChange={(e) => setImportServiceDirection(e.target.value)}
-                  >
-                    {serviceDirections.map((direction) => (
-                      <option key={direction} value={direction}>{direction}</option>
-                    ))}
-                  </Select>
-                </div>
-              ) : null}
             </div>
 
             <div className="rounded-lg border border-sand-200 bg-sand-50 p-3 text-xs text-sand-700">
-              Required columns: Traveler Name, Passport/Iqama, Traveler Type. Optional columns: Phone Number, Family Members, Family Passports, Amount Paid, Payment Method, Extra Room Charge, Custom Price, Status.
+              Required columns: Name, Type, Iqama. Optional columns: Phone, Provider, Direction, Custom Price, Extra Room Charge. Empty provider uses the main provider.
             </div>
 
             {importFileName ? (
@@ -1005,7 +1089,7 @@ export default function Travelers() {
 
             {importRows.length ? (
               <div className="overflow-x-auto rounded-lg border border-sand-200">
-                <Table className="min-w-[900px]">
+                <Table className="min-w-[1300px]">
                   <TableHead>
                     <TableRow>
                       <TableHeaderCell>Row</TableHeaderCell>
@@ -1014,7 +1098,9 @@ export default function Travelers() {
                       <TableHeaderCell>Phone</TableHeaderCell>
                       <TableHeaderCell>Type</TableHeaderCell>
                       <TableHeaderCell>Family Count</TableHeaderCell>
-                      <TableHeaderCell>Paid</TableHeaderCell>
+                      <TableHeaderCell>Provider</TableHeaderCell>
+                      <TableHeaderCell>Direction</TableHeaderCell>
+                      <TableHeaderCell>Custom Price</TableHeaderCell>
                       <TableHeaderCell>Issues</TableHeaderCell>
                     </TableRow>
                   </TableHead>
@@ -1022,12 +1108,76 @@ export default function Travelers() {
                     {importRows.slice(0, 50).map((row) => (
                       <TableRow key={row.rowNumber}>
                         <TableCell>{row.rowNumber}</TableCell>
-                        <TableCell>{row.travelerName || "-"}</TableCell>
-                        <TableCell>{row.passportOrIqama || "-"}</TableCell>
-                        <TableCell>{row.phoneNumber || "-"}</TableCell>
-                        <TableCell>{row.travelerType || "-"}</TableCell>
-                        <TableCell>{row.familyCount}</TableCell>
-                        <TableCell>{formatCurrency(row.amountPaid)}</TableCell>
+                        <TableCell className="min-w-44">
+                          <Input
+                            value={row.travelerName}
+                            onChange={(e) => updateImportRow(row.rowNumber, "travelerName", e.target.value)}
+                          />
+                        </TableCell>
+                        <TableCell className="min-w-36">
+                          <Input
+                            value={row.passportOrIqama}
+                            onChange={(e) => updateImportRow(row.rowNumber, "passportOrIqama", e.target.value)}
+                          />
+                        </TableCell>
+                        <TableCell className="min-w-32">
+                          <Input
+                            value={row.phoneNumber}
+                            onChange={(e) => updateImportRow(row.rowNumber, "phoneNumber", e.target.value)}
+                          />
+                        </TableCell>
+                        <TableCell className="min-w-32">
+                          <Select
+                            value={row.travelerType}
+                            onChange={(e) => updateImportRow(row.rowNumber, "travelerType", e.target.value)}
+                          >
+                            {travelerTypes.map((type) => (
+                              <option key={type.value} value={type.value}>{type.label}</option>
+                            ))}
+                          </Select>
+                        </TableCell>
+                        <TableCell className="min-w-28">
+                          <Input
+                            type="number"
+                            min="1"
+                            value={row.familyCount}
+                            disabled={row.travelerType !== "FAMILY"}
+                            onChange={(e) => updateImportRow(row.rowNumber, "travelerType", `F${e.target.value || 1}`)}
+                          />
+                        </TableCell>
+                        <TableCell className="min-w-44">
+                          <Select
+                            value={row.providerId}
+                            onChange={(e) => applyProviderToImportRow(row.rowNumber, e.target.value)}
+                          >
+                            <option value="">Use main provider</option>
+                            {providers.map((provider) => (
+                              <option key={provider.id} value={provider.id}>
+                                {provider.providerName}{provider.isMain ? " (Main)" : ""}
+                              </option>
+                            ))}
+                          </Select>
+                        </TableCell>
+                        <TableCell className="min-w-36">
+                          <Select
+                            value={row.serviceDirection}
+                            disabled={!row.providerId || row.isProviderMain}
+                            onChange={(e) => updateImportRow(row.rowNumber, "serviceDirection", e.target.value)}
+                          >
+                            <option value="">-</option>
+                            {serviceDirections.map((direction) => (
+                              <option key={direction} value={direction}>{direction}</option>
+                            ))}
+                          </Select>
+                        </TableCell>
+                        <TableCell className="min-w-32">
+                          <Input
+                            type="number"
+                            min="0"
+                            value={row.customPrice}
+                            onChange={(e) => updateImportRow(row.rowNumber, "customPrice", e.target.value)}
+                          />
+                        </TableCell>
                         <TableCell>
                           {row.errors.length ? (
                             <span className="text-xs font-semibold text-red-600">{row.errors.join(", ")}</span>

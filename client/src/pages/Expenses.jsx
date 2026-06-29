@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { apiFetch } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.jsx";
@@ -100,6 +101,9 @@ export default function Expenses() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { confirm, dialog } = useConfirm();
+  const [searchParams] = useSearchParams();
+  const routeTripId = searchParams.get("tripId");
+  const routeNew = searchParams.get("new");
   const [expenses, setExpenses] = useState([]);
   const [trips, setTrips] = useState([]);
   const [providers, setProviders] = useState([]);
@@ -185,6 +189,22 @@ export default function Expenses() {
   const resetForm = () => {
     setForm({ date: "", tripId: "", category: "BUS", description: "", amount: "", serviceProviderId: "" });
   };
+
+  useEffect(() => {
+    if (!routeTripId || routeNew !== "1" || !trips.length) return;
+
+    const trip = trips.find((item) => String(item.id) === String(routeTripId));
+    setEditingId(null);
+    setForm({
+      date: trip?.tripDate ? toDateKey(trip.tripDate) : "",
+      tripId: routeTripId,
+      category: "BUS",
+      description: "",
+      amount: "",
+      serviceProviderId: ""
+    });
+    setIsFormOpen(true);
+  }, [routeTripId, routeNew, trips]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();

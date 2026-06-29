@@ -9,13 +9,27 @@ const sizeStyles = {
   xl: "max-w-4xl"
 };
 
+let scrollLockCount = 0;
+
+function unlockPageScroll() {
+  document.body.style.removeProperty("overflow");
+  document.documentElement.style.removeProperty("overflow");
+}
+
+if (typeof document !== "undefined") {
+  unlockPageScroll();
+}
+
 export function Modal({ open, onClose, children, size = "lg", className, showClose = true }) {
   useEffect(() => {
     if (!open) return undefined;
-    const previous = document.body.style.overflow;
+    scrollLockCount += 1;
     document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.overflow = previous;
+      scrollLockCount = Math.max(scrollLockCount - 1, 0);
+      if (scrollLockCount === 0) {
+        unlockPageScroll();
+      }
     };
   }, [open]);
 

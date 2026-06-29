@@ -54,6 +54,7 @@ export function exportToExcel(filename, headers, rows, options = {}) {
   const alignments = options.alignments || headers.map((_, idx) => (idx === 0 ? "center" : "left"));
   const columnWidths = options.columnWidths || headers.map(() => ({ wch: 18 }));
   const boldRows = options.boldRows || [];
+  const rtl = Boolean(options.rtl);
 
   const sheetRows = [];
   sheetRows.push([headerTitle]);
@@ -72,6 +73,9 @@ export function exportToExcel(filename, headers, rows, options = {}) {
   rows.forEach((row) => sheetRows.push(row));
 
   const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
+  if (rtl) {
+    worksheet["!rtl"] = true;
+  }
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, "Report");
 
