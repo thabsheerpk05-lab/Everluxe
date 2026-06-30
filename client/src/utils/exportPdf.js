@@ -86,6 +86,7 @@ function addTableReport(doc, title, headers, rows, options = {}) {
   const cellPadding = options.cellPadding ?? 8;
   const headCellPadding = options.headCellPadding ?? 9;
   const overflow = options.overflow || "linebreak";
+  const printFriendlyHeader = Boolean(options.printFriendlyHeader);
   const tableHeaders = rtl
     ? headers.map((header) => pdfCell(doc, header, rtl)).reverse()
     : headers.map((header) => pdfCell(doc, header, rtl));
@@ -101,19 +102,31 @@ function addTableReport(doc, title, headers, rows, options = {}) {
   const marginX = options.marginX ?? 40;
   const contentWidth = pageWidth - marginX * 2;
   const brand = { r: 30, g: 104, b: 86 };
+  const headerTextColor = printFriendlyHeader ? [30, 104, 86] : [255, 255, 255];
+  const titleTextColor = printFriendlyHeader ? [17, 24, 39] : [255, 255, 255];
 
-  doc.setFillColor(brand.r, brand.g, brand.b);
+  doc.setFillColor(
+    printFriendlyHeader ? 255 : brand.r,
+    printFriendlyHeader ? 255 : brand.g,
+    printFriendlyHeader ? 255 : brand.b
+  );
   doc.rect(0, 0, pageWidth, 70, "F");
+  if (printFriendlyHeader) {
+    doc.setDrawColor(brand.r, brand.g, brand.b);
+    doc.setLineWidth(1.2);
+    doc.line(marginX, 68, pageWidth - marginX, 68);
+  }
 
   setPdfFont(doc, headerTitle, rtl, "bold");
   doc.setFontSize(15);
-  doc.setTextColor(255, 255, 255);
+  doc.setTextColor(...headerTextColor);
   doc.setCharSpace(1.4);
   doc.text(pdfText(doc, headerTitle, rtl), pageWidth / 2, 30, { align: "center" });
 
   if (title) {
     doc.setFontSize(11);
     doc.setCharSpace(0.6);
+    doc.setTextColor(...titleTextColor);
     doc.text(pdfText(doc, title, rtl), pageWidth / 2, 52, { align: "center" });
   }
 

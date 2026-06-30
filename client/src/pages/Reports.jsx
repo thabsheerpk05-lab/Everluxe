@@ -638,7 +638,8 @@ export default function Reports() {
       includeMeta: activeMeta.length > 0,
       metaTitle: isKashf ? "تفاصيل التقرير" : undefined,
       pageLabel: isKashf ? "صفحة" : undefined,
-      rtl: isKashf
+      rtl: isKashf,
+      printFriendlyHeader: type === "BUSLIST" || isKashf
     });
   };
 
