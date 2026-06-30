@@ -7,6 +7,35 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 const router = express.Router();
 const allowedStatuses = ["OPEN", "FINISHED"];
 
+const tripInclude = {
+  package: true,
+  driver: true,
+  coDriver: true,
+  ameer: true,
+  bus: true,
+  _count: { select: { travelers: true } }
+};
+
+async function attachTripTotals(trip) {
+  if (!trip) return trip;
+  const [countAgg, paymentAgg] = await Promise.all([
+    prisma.traveler.aggregate({
+      where: { tripId: trip.id },
+      _sum: { familyCount: true }
+    }),
+    prisma.traveler.aggregate({
+      where: { tripId: trip.id, status: "ACTIVE" },
+      _sum: { amountPaid: true }
+    })
+  ]);
+
+  return {
+    ...trip,
+    travelerCount: countAgg._sum.familyCount || 0,
+    totalPaid: paymentAgg._sum.amountPaid || 0
+  };
+}
+
 router.get("/", authenticate, asyncHandler(async (req, res) => {
   if (!hasPermission(req.user, "can_view_trips")) {
     return res.status(403).json({ message: "Access denied" });
@@ -114,25 +143,36 @@ router.put("/:id/status", authenticate, requireAdmin, asyncHandler(async (req, r
     return res.status(400).json({ message: "Invalid trip status" });
   }
 
-  const updated = await prisma.trip.update({
-    where: { id },
-    data: { status },
-    include: {
-      package: true,
-      driver: true,
-      coDriver: true,
-      ameer: true,
-      bus: true,
-      _count: { select: { travelers: true } }
+  const updated = await prisma.$transaction(async (tx) => {
+    if (status === "FINISHED") {
+      await tx.$executeRaw`
+        UPDATE "Traveler"
+        SET "paymentAmount" = "finalAmount",
+            "paymentStatus" = 'PAID',
+            "paymentType" = 'FULL'
+        WHERE "tripId" = ${id}
+          AND "status" = 'ACTIVE'
+      `;
     }
+
+    return tx.trip.update({
+      where: { id },
+      data: { status },
+      include: tripInclude
+    });
   });
 
-  return res.json(updated);
+  return res.json(await attachTripTotals(updated));
 }));
 
 router.delete("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  await prisma.trip.delete({ where: { id } });
+  await prisma.$transaction([
+    prisma.tripCollection.deleteMany({ where: { tripId: id } }),
+    prisma.expense.updateMany({ where: { tripId: id }, data: { tripId: null } }),
+    prisma.traveler.deleteMany({ where: { tripId: id } }),
+    prisma.trip.delete({ where: { id } })
+  ]);
   return res.status(204).send();
 }));
 export default router;

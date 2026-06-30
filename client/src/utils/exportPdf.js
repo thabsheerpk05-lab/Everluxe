@@ -1,7 +1,12 @@
 import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
+import autoTableModule from "jspdf-autotable";
 
 const DEFAULT_HEADER = "WADINOOR DAILY UMRAH SERVICE";
+const ARABIC_RE = /[\u0600-\u06FF]/;
+const ARABIC_FONT_NAME = "NotoSansArabic";
+const ARABIC_FONT_FILE = "NotoSansArabic-Regular.ttf";
+let arabicFontBase64Promise;
+const autoTable = autoTableModule.default || autoTableModule;
 
 function formatDate(date) {
   const d = date instanceof Date ? date : new Date(date);
@@ -13,20 +18,83 @@ function formatDate(date) {
   });
 }
 
+function pdfText(doc, value, rtl = false) {
+  const text = String(value ?? "");
+  if (!rtl || !ARABIC_RE.test(text) || typeof doc.processArabic !== "function") return text;
+  return doc.processArabic(text);
+}
+
+function hasArabic(value) {
+  return ARABIC_RE.test(String(value ?? ""));
+}
+
+function fontForText(value, rtl = false) {
+  return rtl && hasArabic(value) ? ARABIC_FONT_NAME : "helvetica";
+}
+
+function setPdfFont(doc, value, rtl = false, style = "normal") {
+  doc.setFont(fontForText(value, rtl), style);
+}
+
+function pdfCell(doc, value, rtl = false) {
+  if (value === null || value === undefined) return value;
+  if (typeof value === "number") return value;
+  return pdfText(doc, value, rtl);
+}
+
+async function loadArabicFontBase64() {
+  if (!arabicFontBase64Promise) {
+    arabicFontBase64Promise = fetch(`/fonts/${ARABIC_FONT_FILE}`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`Unable to load Arabic PDF font: ${response.status}`);
+        return response.arrayBuffer();
+      })
+      .then((buffer) => {
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        }
+        return btoa(binary);
+      });
+  }
+  return arabicFontBase64Promise;
+}
+
+async function registerArabicFont(doc, rtl = false) {
+  if (!rtl) return;
+  const fontBase64 = await loadArabicFontBase64();
+  doc.addFileToVFS(ARABIC_FONT_FILE, fontBase64);
+  doc.addFont(ARABIC_FONT_FILE, ARABIC_FONT_NAME, "normal");
+  doc.addFont(ARABIC_FONT_FILE, ARABIC_FONT_NAME, "bold");
+}
+
 function addTableReport(doc, title, headers, rows, options = {}) {
   const headerTitle = options.headerTitle || DEFAULT_HEADER;
   const meta = options.meta || [];
-  const alignments = options.alignments || headers.map((_, idx) => (idx === 0 ? "center" : "left"));
+  const rtl = Boolean(options.rtl);
+  const alignments = options.alignments || headers.map((_, idx) => (idx === 0 ? "center" : rtl ? "right" : "left"));
   const includeGenerated = options.includeGenerated !== false;
   const includeMeta = options.includeMeta !== false;
   const generatedAt = options.generatedAt || new Date();
   const boldRows = options.boldRows || [];
   const metaTitle = options.metaTitle || "Report Details";
+  const pageLabel = options.pageLabel || "Page";
   const fontSize = options.fontSize || 9;
   const headFontSize = options.headFontSize || 9.5;
   const cellPadding = options.cellPadding ?? 8;
   const headCellPadding = options.headCellPadding ?? 9;
   const overflow = options.overflow || "linebreak";
+  const tableHeaders = rtl
+    ? headers.map((header) => pdfCell(doc, header, rtl)).reverse()
+    : headers.map((header) => pdfCell(doc, header, rtl));
+  const tableRows = rows.map((row) => {
+    const cells = row.map((cell) => pdfCell(doc, cell, rtl));
+    return rtl ? cells.reverse() : cells;
+  });
+  const tableRawRows = rows.map((row) => (rtl ? [...row].reverse() : row));
+  const tableAlignments = rtl ? [...alignments].reverse() : alignments;
 
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -37,16 +105,16 @@ function addTableReport(doc, title, headers, rows, options = {}) {
   doc.setFillColor(brand.r, brand.g, brand.b);
   doc.rect(0, 0, pageWidth, 70, "F");
 
-  doc.setFont("helvetica", "bold");
+  setPdfFont(doc, headerTitle, rtl, "bold");
   doc.setFontSize(15);
   doc.setTextColor(255, 255, 255);
   doc.setCharSpace(1.4);
-  doc.text(headerTitle, pageWidth / 2, 30, { align: "center" });
+  doc.text(pdfText(doc, headerTitle, rtl), pageWidth / 2, 30, { align: "center" });
 
   if (title) {
     doc.setFontSize(11);
     doc.setCharSpace(0.6);
-    doc.text(title, pageWidth / 2, 52, { align: "center" });
+    doc.text(pdfText(doc, title, rtl), pageWidth / 2, 52, { align: "center" });
   }
 
   doc.setCharSpace(0);
@@ -83,7 +151,11 @@ function addTableReport(doc, title, headers, rows, options = {}) {
   if (includeMeta && metaItems.length) {
     const rowHeights = metaRows.map((row) => {
       const lineCounts = row.map((item) =>
-        doc.splitTextToSize(item.value || "-", valueWidth).length
+        {
+          const value = item.value || "-";
+          setPdfFont(doc, value, rtl, "normal");
+          return doc.splitTextToSize(pdfText(doc, value, rtl), valueWidth).length;
+        }
       );
       return Math.max(1, ...lineCounts) * 12;
     });
@@ -96,10 +168,10 @@ function addTableReport(doc, title, headers, rows, options = {}) {
     doc.setFillColor(248, 250, 252);
     doc.setDrawColor(226, 232, 240);
     doc.roundedRect(marginX, metaBoxY, contentWidth, metaBoxHeight, 7, 7, "FD");
-    doc.setFont("helvetica", "bold");
+    setPdfFont(doc, metaTitle, rtl, "bold");
     doc.setFontSize(9);
     doc.setTextColor(brand.r, brand.g, brand.b);
-    doc.text(metaTitle.toUpperCase(), marginX + 10, metaBoxY + metaBoxPadding + 10);
+    doc.text(pdfText(doc, metaTitle.toUpperCase(), rtl), marginX + 10, metaBoxY + metaBoxPadding + 10);
 
     let metaY = metaBoxY + metaBoxPadding + metaTitleHeight;
     doc.setFontSize(9);
@@ -107,12 +179,13 @@ function addTableReport(doc, title, headers, rows, options = {}) {
       const rowHeight = rowHeights[rowIndex];
       row.forEach((item, colIndex) => {
         const colX = marginX + 10 + colIndex * (columnWidth + gutter);
-        doc.setFont("helvetica", "bold");
+        const labelText = `${(item.label || "Info").toUpperCase()}:`;
+        setPdfFont(doc, labelText, rtl, "bold");
         doc.setTextColor(100, 116, 139);
-        doc.text(`${(item.label || "Info").toUpperCase()}:`, colX, metaY + 9);
-        doc.setFont("helvetica", "normal");
+        doc.text(pdfText(doc, labelText, rtl), colX, metaY + 9);
+        setPdfFont(doc, item.value || "-", rtl, "normal");
         doc.setTextColor(17, 24, 39);
-        const valueLines = doc.splitTextToSize(item.value || "-", valueWidth);
+        const valueLines = doc.splitTextToSize(pdfText(doc, item.value || "-", rtl), valueWidth);
         doc.text(valueLines, colX + labelWidth, metaY + 9);
       });
       metaY += rowHeight + 4;
@@ -123,23 +196,24 @@ function addTableReport(doc, title, headers, rows, options = {}) {
   }
 
   const columnStyles = {};
-  alignments.forEach((align, idx) => {
+  tableAlignments.forEach((align, idx) => {
     columnStyles[idx] = { halign: align };
   });
   Object.entries(options.columnStyles || {}).forEach(([idx, style]) => {
-    columnStyles[idx] = {
-      ...(columnStyles[idx] || {}),
+    const columnIndex = rtl ? headers.length - 1 - Number(idx) : Number(idx);
+    columnStyles[columnIndex] = {
+      ...(columnStyles[columnIndex] || {}),
       ...style
     };
   });
 
   autoTable(doc, {
-    head: [headers],
-    body: rows,
+    head: [tableHeaders],
+    body: tableRows,
     startY: tableStartY,
     theme: "plain",
     styles: {
-      font: "helvetica",
+      font: rtl ? ARABIC_FONT_NAME : "helvetica",
       fontSize,
       cellPadding,
       lineColor: [224, 230, 234],
@@ -166,15 +240,22 @@ function addTableReport(doc, title, headers, rows, options = {}) {
       if (data.section === "body" && boldRows.includes(data.row.index)) {
         data.cell.styles.fontStyle = "bold";
       }
+      if (rtl && data.section === "body") {
+        const rawValue = tableRawRows[data.row.index]?.[data.column.index];
+        if (!hasArabic(rawValue)) {
+          data.cell.styles.font = "helvetica";
+        }
+      }
       if (data.section === "head") {
-        data.cell.styles.halign = alignments[data.column.index] || "left";
+        data.cell.styles.halign = tableAlignments[data.column.index] || (rtl ? "right" : "left");
       }
     },
     didDrawPage: () => {
       const pageCount = doc.internal.getNumberOfPages();
       doc.setFontSize(8);
       doc.setTextColor(124, 136, 150);
-      doc.text(`Page ${pageCount}`, pageWidth - marginX, pageHeight - 18, { align: "right" });
+      setPdfFont(doc, pageLabel, rtl, "normal");
+      doc.text(pdfText(doc, `${pageLabel} ${pageCount}`, rtl), pageWidth - marginX, pageHeight - 18, { align: "right" });
       doc.setTextColor(17, 24, 39);
     }
   });
@@ -182,9 +263,17 @@ function addTableReport(doc, title, headers, rows, options = {}) {
 
 export function exportToPdf(title, headers, rows, options = {}) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
-  addTableReport(doc, title, headers, rows, options);
+  const save = () => {
+    addTableReport(doc, title, headers, rows, options);
+    doc.save(`${title || "Report"}.pdf`);
+  };
 
-  doc.save(`${title || "Report"}.pdf`);
+  if (options.rtl) {
+    return registerArabicFont(doc, true).then(save);
+  }
+
+  save();
+  return undefined;
 }
 
 function formatDateDMY(date) {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiFetch } from "../api/client.js";
 import { useAuth } from "../context/AuthContext.jsx";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card.jsx";
@@ -41,6 +42,7 @@ const statusOptions = [
 
 export default function Trips() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { toast } = useToast();
   const { confirm, dialog } = useConfirm();
   const perms = useMemo(() => parsePermissions(user?.permissions), [user?.permissions]);
@@ -222,6 +224,7 @@ export default function Trips() {
 
   const markTripFinished = async () => {
     if (!finishTrip || finishTrip.status === "FINISHED") return;
+    const hasExpense = (expenseTotals.get(finishTrip.id) || 0) > 0;
     try {
       const updated = await apiFetch(`/trips/${finishTrip.id}/status`, {
         method: "PUT",
@@ -229,9 +232,53 @@ export default function Trips() {
       });
       await loadData();
       setFinishTrip(updated);
+      toast({ title: "Trip finished. All traveler payments are marked paid.", variant: "success" });
+      if (canViewExpenses && !hasExpense) {
+        setIsFinishOpen(false);
+        const shouldAddExpense = await confirm({
+          title: "Add expense for this trip?",
+          description: "This trip has no expense recorded yet. Do you want to add one now?",
+          confirmLabel: "Add Expense",
+          cancelLabel: "Later",
+          tone: "warning"
+        });
+        if (shouldAddExpense) {
+          navigate(`/expenses?tripId=${finishTrip.id}&new=1`);
+        }
+      }
     } catch (err) {
       toast({ title: err.message, variant: "error" });
     }
+  };
+
+  const markTripOpen = async () => {
+    if (!finishTrip || finishTrip.status !== "FINISHED") return;
+    try {
+      const updated = await apiFetch(`/trips/${finishTrip.id}/status`, {
+        method: "PUT",
+        body: JSON.stringify({ status: "OPEN" })
+      });
+      await loadData();
+      setFinishTrip(updated);
+      toast({ title: "Trip moved back to unfinished.", variant: "success" });
+    } catch (err) {
+      toast({ title: err.message, variant: "error" });
+    }
+  };
+
+  const jumpToTripExpenses = (trip) => {
+    if (!trip) return;
+    navigate(`/expenses?tripId=${trip.id}&new=1`);
+  };
+
+  const jumpToTripTravelers = (trip) => {
+    if (!trip) return;
+    navigate(`/travelers?tripId=${trip.id}`);
+  };
+
+  const editSummaryTrip = (trip) => {
+    closeFinish();
+    handleEdit(trip);
   };
 
   const closeFinish = () => {
@@ -445,8 +492,20 @@ export default function Trips() {
                 </div>
               </div>
               <div className="flex justify-end gap-2">
+                {user?.role === "ADMIN" ? (
+                  <>
+                    <Button variant="outline" onClick={() => editSummaryTrip(finishTrip)}>Edit Trip</Button>
+                    <Button variant="outline" onClick={() => jumpToTripTravelers(finishTrip)}>Edit Travelers</Button>
+                    {canViewExpenses ? (
+                      <Button variant="outline" onClick={() => jumpToTripExpenses(finishTrip)}>Add Expense</Button>
+                    ) : null}
+                  </>
+                ) : null}
                 {user?.role === "ADMIN" && finishTrip?.status !== "FINISHED" ? (
                   <Button onClick={markTripFinished}>Mark Finished</Button>
+                ) : null}
+                {user?.role === "ADMIN" && finishTrip?.status === "FINISHED" ? (
+                  <Button onClick={markTripOpen}>Back to Unfinished</Button>
                 ) : null}
                 <Button variant="outline" onClick={closeFinish}>Close</Button>
               </div>
@@ -584,7 +643,6 @@ export default function Trips() {
     </div>
   );
 }
-
 
 
 

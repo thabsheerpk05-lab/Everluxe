@@ -12,7 +12,7 @@ import { exportListExpenseIncomePdf, exportToPdf } from "../utils/exportPdf.js";
 const reportTypes = [
   { label: "LIST", value: "LIST" },
   { label: "BUS LIST", value: "BUSLIST" },
-  { label: "KASHF", value: "KASHF" }
+  { label: "كشف", value: "KASHF" }
 ];
 
 const expenseCategories = [
@@ -30,6 +30,14 @@ function expenseCategoryLabel(value) {
   if (value === "Administrative") return "Administrative Expenses";
   if (value === "OTHER") return "Miscellaneous Expense";
   return expenseCategories.find((cat) => cat.value === value)?.label || value || "-";
+}
+
+function formatArabicReportDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${date.getFullYear()}`;
 }
 
 function buildExpenseReport(items) {
@@ -322,7 +330,7 @@ function buildReport(type, passengers) {
       rows.push([
         rowSerial++,
         safe(p.travelerName),
-        "Indian",
+        "هندي",
         safe(p.passportOrIqama)
       ]);
 
@@ -331,7 +339,7 @@ function buildReport(type, passengers) {
           rows.push([
             rowSerial++,
             safe(member.name),
-            "Indian",
+            "هندي",
             safe(member.iqama)
           ]);
         });
@@ -339,7 +347,7 @@ function buildReport(type, passengers) {
     });
 
     return {
-      headers: ["No.", "Name", "Nationality", "Iqama number"],
+      headers: ["الرقم", "الاسم", "الجنسية", "رقم الإقامة"],
       rows
     };
   }
@@ -566,15 +574,28 @@ export default function Reports() {
 
   const report = useMemo(() => buildReport(type, passengers), [type, passengers]);
   const expenseReport = useMemo(() => buildExpenseReport(expenses), [expenses]);
+  const isKashf = type === "KASHF";
   const reportTitle = type === "BUSLIST"
     ? "BUS LIST"
+    : isKashf
+      ? "كشف"
     : type;
 
   const safeText = (value) => (value === null || value === undefined || value === "" ? "-" : value);
   const personLine = (label, name, iqama) => `${label}: ${safeText(name)} | Iqama: ${safeText(iqama)}`;
+  const arabicPersonLine = (label, name, iqama) => `${label}: ${safeText(name)} | رقم الإقامة: ${safeText(iqama)}`;
   const showBusMeta = type === "BUSLIST" || type === "KASHF";
   const reportMeta = tripMeta && type !== "LIST"
-    ? showBusMeta
+    ? isKashf
+      ? [
+          `رقم الباص: ${safeText(tripMeta.busNumber)}`,
+          `تاريخ الرحلة: ${formatArabicReportDate(tripMeta.tripDate)}`,
+          `خط السير: ${safeText(tripMeta.route)}`,
+          arabicPersonLine("السائق", tripMeta.driverName, tripMeta.driverIqama),
+          arabicPersonLine("السائق المساعد", tripMeta.coDriverName, tripMeta.coDriverIqama),
+          arabicPersonLine("الأمير", tripMeta.ameerName, tripMeta.ameerIqama)
+        ]
+      : showBusMeta
       ? [
           `Bus Number: ${safeText(tripMeta.busNumber)}`,
           `Travel Date: ${formatDate(tripMeta.tripDate)}`,
@@ -604,29 +625,36 @@ export default function Reports() {
     : [];
   const activeMeta = usesListFilters ? listMeta : reportMeta;
 
-  const handleExportPdf = () => {
+  const handleExportPdf = async () => {
     if (type === "LIST") {
       handleListPdf();
       return;
     }
-    exportToPdf(`${reportTitle} REPORT`, report.headers, report.rows, {
-      headerTitle: "WADINOOR DAILY UMRAH SERVICE",
+    await exportToPdf(isKashf ? "تقرير كشف الركاب" : `${reportTitle} REPORT`, report.headers, report.rows, {
+      headerTitle: isKashf ? "خدمة وادي نور اليومية للعمرة" : "WADINOOR DAILY UMRAH SERVICE",
       meta: activeMeta,
-      alignments: columnAlignments(report.headers),
+      alignments: isKashf ? ["center", "right", "right", "right"] : columnAlignments(report.headers),
       includeGenerated: false,
-      includeMeta: activeMeta.length > 0
+      includeMeta: activeMeta.length > 0,
+      metaTitle: isKashf ? "تفاصيل التقرير" : undefined,
+      pageLabel: isKashf ? "صفحة" : undefined,
+      rtl: isKashf
     });
   };
 
   const handleExportExcel = () => {
-    exportToExcel(`${reportTitle}-Report.xlsx`, report.headers, report.rows, {
-      headerTitle: "WADINOOR DAILY UMRAH SERVICE",
-      title: `${reportTitle} REPORT`,
+    exportToExcel(isKashf ? "تقرير-كشف.xlsx" : `${reportTitle}-Report.xlsx`, report.headers, report.rows, {
+      headerTitle: isKashf ? "خدمة وادي نور اليومية للعمرة" : "WADINOOR DAILY UMRAH SERVICE",
+      title: isKashf ? "تقرير كشف الركاب" : `${reportTitle} REPORT`,
       meta: activeMeta,
-      alignments: columnAlignments(report.headers),
-      columnWidths: passengerColumnWidths(report.headers),
+      alignments: isKashf ? ["center", "right", "right", "right"] : columnAlignments(report.headers),
+      columnWidths: isKashf
+        ? [{ wch: 10 }, { wch: 28 }, { wch: 16 }, { wch: 20 }]
+        : passengerColumnWidths(report.headers),
       includeGenerated: false,
-      includeMeta: activeMeta.length > 0
+      includeMeta: activeMeta.length > 0,
+      metaTitle: isKashf ? "تفاصيل التقرير" : undefined,
+      rtl: isKashf
     });
   };
 
@@ -742,20 +770,24 @@ export default function Reports() {
     : passengers.length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" dir={isKashf ? "rtl" : undefined}>
       <div>
-        <h1 className="font-display text-3xl">Reports</h1>
-        <p className="text-sm text-sand-600">Generate passenger lists and financial summaries.</p>
+        <h1 className="font-display text-3xl">{isKashf ? "التقارير" : "Reports"}</h1>
+        <p className="text-sm text-sand-600">
+          {isKashf ? "إنشاء كشف الركاب وتصديره." : "Generate passenger lists and financial summaries."}
+        </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Reports</CardTitle>
+          <CardTitle>{isKashf ? "التقارير" : "Reports"}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
             <div>
-              <label className="text-xs font-semibold text-sand-600">Report Type</label>
+              <label className="text-xs font-semibold text-sand-600">
+                {isKashf ? "نوع التقرير" : "Report Type"}
+              </label>
               <Select
                 value={type}
                 onChange={(e) => {
@@ -817,9 +849,9 @@ export default function Reports() {
               </>
             ) : (
               <div>
-                <label className="text-xs font-semibold text-sand-600">Trip</label>
+                <label className="text-xs font-semibold text-sand-600">{isKashf ? "الرحلة" : "Trip"}</label>
                 <Select value={tripId} onChange={(e) => setTripId(e.target.value)}>
-                  <option value="">Select trip</option>
+                  <option value="">{isKashf ? "اختر الرحلة" : "Select trip"}</option>
                   {trips.map((trip) => (
                     <option key={trip.id} value={trip.id}>
                       {trip.package?.packageName} - {new Date(trip.tripDate).toLocaleDateString("en-GB")}
@@ -830,13 +862,13 @@ export default function Reports() {
             )}
             <div className="flex flex-wrap items-end gap-2 md:col-span-2 lg:col-span-1 lg:justify-end">
               <Button onClick={handleGenerate} disabled={!canGenerate}>
-                Generate
+                {isKashf ? "إنشاء" : "Generate"}
               </Button>
               <Button variant="outline" onClick={handleExportPdf} disabled={!canExport}>
-                {type === "LIST" ? "Export Full PDF" : "Export PDF"}
+                {isKashf ? "تصدير PDF" : type === "LIST" ? "Export Full PDF" : "Export PDF"}
               </Button>
               <Button variant="outline" onClick={handleExportExcel} disabled={!canExport}>
-                Export Excel
+                {isKashf ? "تصدير Excel" : "Export Excel"}
               </Button>
             </div>
           </div>
@@ -941,13 +973,26 @@ export default function Reports() {
 
           {tripMeta && type !== "LIST" ? (
             showBusMeta ? (
-              <div className="mt-3 space-y-1 text-xs text-sand-600">
-                <div>Bus Number: {safeText(tripMeta.busNumber)}</div>
-                <div>Travel Date: {formatDate(tripMeta.tripDate)}</div>
-                <div>Route: {safeText(tripMeta.route)}</div>
-                <div>Driver: {safeText(tripMeta.driverName)} | Iqama: {safeText(tripMeta.driverIqama)}</div>
-                <div>Co-driver: {safeText(tripMeta.coDriverName)} | Iqama: {safeText(tripMeta.coDriverIqama)}</div>
-                <div>Ameer: {safeText(tripMeta.ameerName)} | Iqama: {safeText(tripMeta.ameerIqama)}</div>
+              <div className={`mt-3 space-y-1 text-xs text-sand-600 ${isKashf ? "text-right" : ""}`}>
+                {isKashf ? (
+                  <>
+                    <div>رقم الباص: {safeText(tripMeta.busNumber)}</div>
+                    <div>تاريخ الرحلة: {formatArabicReportDate(tripMeta.tripDate)}</div>
+                    <div>خط السير: {safeText(tripMeta.route)}</div>
+                    <div>السائق: {safeText(tripMeta.driverName)} | رقم الإقامة: {safeText(tripMeta.driverIqama)}</div>
+                    <div>السائق المساعد: {safeText(tripMeta.coDriverName)} | رقم الإقامة: {safeText(tripMeta.coDriverIqama)}</div>
+                    <div>الأمير: {safeText(tripMeta.ameerName)} | رقم الإقامة: {safeText(tripMeta.ameerIqama)}</div>
+                  </>
+                ) : (
+                  <>
+                    <div>Bus Number: {safeText(tripMeta.busNumber)}</div>
+                    <div>Travel Date: {formatDate(tripMeta.tripDate)}</div>
+                    <div>Route: {safeText(tripMeta.route)}</div>
+                    <div>Driver: {safeText(tripMeta.driverName)} | Iqama: {safeText(tripMeta.driverIqama)}</div>
+                    <div>Co-driver: {safeText(tripMeta.coDriverName)} | Iqama: {safeText(tripMeta.coDriverIqama)}</div>
+                    <div>Ameer: {safeText(tripMeta.ameerName)} | Iqama: {safeText(tripMeta.ameerIqama)}</div>
+                  </>
+                )}
               </div>
             ) : (
               <div className="mt-3 text-xs text-sand-600">
@@ -957,7 +1002,7 @@ export default function Reports() {
           ) : null}
 
           <div className="mt-4">
-            <Table>
+            <Table className={isKashf ? "text-right" : undefined}>
               <TableHead>
                 <TableRow>
                   {report.headers.map((header) => (
