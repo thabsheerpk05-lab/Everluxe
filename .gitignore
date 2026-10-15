@@ -1,5 +1,7 @@
 node_modules
 .env
 *.db
+server/uploads
+server/prisma/_tmp_*.sql
 client/dist
 server/prisma/dev.db

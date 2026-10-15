@@ -17,35 +17,14 @@ router.get("/", authenticate, requireAdmin, asyncHandler(async (req, res) => {
 
 router.put("/:id", authenticate, requireAdmin, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
-  const { name, email, role, password, permissions } = req.body || {};
-
-  const staffBase = {
-    can_view_trips: true,
-    can_view_packages: true,
-    can_view_travelers: true,
-    can_edit_travelers: true,
-    can_view_expenses: true,
-    can_edit_expenses: true,
-    can_view_reports: true,
-    can_manage_payments: true
-  };
-  let permissionsObj = typeof permissions === "string" ? JSON.parse(permissions) : (permissions || {});
-  const isAdmin = role === "ADMIN";
-  if (!isAdmin) {
-    if (!permissionsObj.is_ameer || !permissionsObj.ameer_id) {
-      return res.status(400).json({ message: "Staff users must be assigned to an ameer." });
-    }
-    permissionsObj = { ...staffBase, ...permissionsObj, is_ameer: true };
-  } else {
-    permissionsObj = { ...permissionsObj, is_ameer: false };
-    delete permissionsObj.ameer_id;
-  }
+  const { name, email, role, password } = req.body || {};
+  if (role && !["ADMIN", "CUSTOMER"].includes(role)) return res.status(400).json({ message: "Users can only be ADMIN or CUSTOMER." });
 
   const data = {
     name,
     email,
-    role: role === "ADMIN" ? "ADMIN" : "STAFF",
-    permissions: JSON.stringify(permissionsObj)
+    role: role || "CUSTOMER",
+    permissions: "{}"
   };
 
   if (password) {

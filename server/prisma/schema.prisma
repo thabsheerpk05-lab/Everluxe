@@ -14,7 +14,7 @@ model User {
   name        String
   email       String   @unique
   password    String
-  role        String   @default("STAFF")
+  role        String   @default("CUSTOMER")
   permissions String   @default("{}")
   createdAt   DateTime @default(now())
 
@@ -22,6 +22,226 @@ model User {
   expenses    Expense[]
   travelers   Traveler[] @relation("TravelerCreatedBy")
   collections TripCollection[] @relation("CollectionReceivedBy")
+  customerProfile CustomerProfile?
+  createdDesigns CatalogueDesign[] @relation("DesignCreatedBy")
+  updatedDesigns CatalogueDesign[] @relation("DesignUpdatedBy")
+  createdPackages EventPackage[] @relation("EventPackageCreatedBy")
+  updatedPackages EventPackage[] @relation("EventPackageUpdatedBy")
+  enquiries     EventEnquiry[] @relation("CustomerEnquiries")
+  activity      ActivityLog[]
+}
+
+model BusinessProfile {
+  id                  Int      @id @default(1)
+  businessName        String   @default("EVERLUXE EVENTS")
+  publicEmail         String   @default("everluxeevents123@gmail.com")
+  phone               String   @default("+91 97452 27257")
+  whatsapp            String   @default("+91 97452 27257")
+  instagram           String   @default("ever.luxe_events")
+  location            String   @default("Nilambur, Malappuram, Kerala, India")
+  serviceArea         String   @default("Across Kerala")
+  description         String?  @db.Text
+  heroMode            String   @default("DEFAULT")
+  heroImageUrl        String?
+  logoUrl             String?
+  updatedAt           DateTime @updatedAt
+}
+
+model CustomerProfile {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @unique
+  phone       String?
+  whatsapp    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CatalogueCategory {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  slug         String   @unique
+  displayOrder Int      @default(0)
+  status       String   @default("PUBLISHED")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  designs      CatalogueDesign[]
+}
+
+model DesignStyle {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  slug         String   @unique
+  description  String?  @db.Text
+  imageUrl     String?
+  displayOrder Int      @default(0)
+  status       String   @default("PUBLISHED")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  designs      CatalogueDesign[]
+}
+
+model EventType {
+  id           Int      @id @default(autoincrement())
+  name         String   @unique
+  slug         String   @unique
+  imageUrl     String?
+  displayOrder Int      @default(0)
+  status       String   @default("PUBLISHED")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  designs      CatalogueDesign[]
+  enquiries    EventEnquiry[]
+}
+
+model CatalogueDesign {
+  id              Int      @id @default(autoincrement())
+  publicId        String   @unique
+  name            String
+  slug            String   @unique
+  description     String?  @db.Text
+  categoryId      Int?
+  eventTypeId     Int?
+  designStyleId   Int?
+  price           Decimal? @db.Decimal(12, 2)
+  priceType       String   @default("ON_REQUEST")
+  priceVisibility String   @default("HIDDEN")
+  availability    String   @default("AVAILABLE")
+  status          String   @default("DRAFT")
+  featured        Boolean  @default(false)
+  displayOrder    Int      @default(0)
+  createdById     Int
+  updatedById     Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  category        CatalogueCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  eventType       EventType? @relation(fields: [eventTypeId], references: [id], onDelete: SetNull)
+  designStyle     DesignStyle? @relation(fields: [designStyleId], references: [id], onDelete: SetNull)
+  createdBy       User @relation("DesignCreatedBy", fields: [createdById], references: [id])
+  updatedBy       User @relation("DesignUpdatedBy", fields: [updatedById], references: [id])
+  images          CatalogueImage[]
+  packageItems    EventPackageItem[]
+  enquiryItems    EnquiryDesign[]
+}
+
+model CatalogueImage {
+  id          Int      @id @default(autoincrement())
+  designId    Int
+  url         String
+  altText     String?
+  sortOrder   Int      @default(0)
+  isCover     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  design      CatalogueDesign @relation(fields: [designId], references: [id], onDelete: Cascade)
+}
+
+model EventPackage {
+  id              Int      @id @default(autoincrement())
+  publicId        String   @unique
+  name            String
+  slug            String   @unique
+  description     String?  @db.Text
+  price           Decimal? @db.Decimal(12, 2)
+  priceType       String   @default("ON_REQUEST")
+  priceVisibility String   @default("HIDDEN")
+  availability    String   @default("AVAILABLE")
+  status          String   @default("DRAFT")
+  featured        Boolean  @default(false)
+  displayOrder    Int      @default(0)
+  coverImageUrl   String?
+  createdById     Int
+  updatedById     Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  createdBy       User @relation("EventPackageCreatedBy", fields: [createdById], references: [id])
+  updatedBy       User @relation("EventPackageUpdatedBy", fields: [updatedById], references: [id])
+  items           EventPackageItem[]
+  enquiryItems    EnquiryPackage[]
+}
+
+model EventPackageItem {
+  id        Int @id @default(autoincrement())
+  packageId Int
+  designId  Int
+  sortOrder Int @default(0)
+  package   EventPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  design    CatalogueDesign @relation(fields: [designId], references: [id], onDelete: Restrict)
+  @@unique([packageId, designId])
+}
+
+model GalleryItem {
+  id           Int      @id @default(autoincrement())
+  title        String
+  caption      String?  @db.Text
+  imageUrl     String
+  eventTypeId  Int?
+  designStyleId Int?
+  displayOrder Int      @default(0)
+  status       String   @default("DRAFT")
+  featured     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model EventEnquiry {
+  id             Int      @id @default(autoincrement())
+  reference      String   @unique
+  customerId     Int?
+  fullName       String
+  phone          String
+  whatsapp       String?
+  eventTypeId    Int?
+  eventDate      DateTime?
+  eventLocation  String?
+  guestCount     Int?
+  preferredStyle String?
+  budgetRange    String?
+  message        String?  @db.Text
+  status         String   @default("NEW")
+  adminNotes     String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  customer       User? @relation("CustomerEnquiries", fields: [customerId], references: [id], onDelete: SetNull)
+  eventType      EventType? @relation(fields: [eventTypeId], references: [id], onDelete: SetNull)
+  selectedDesigns EnquiryDesign[]
+  selectedPackages EnquiryPackage[]
+}
+
+model EnquiryDesign {
+  id          Int      @id @default(autoincrement())
+  enquiryId   Int
+  designId    Int
+  designName  String
+  price       Decimal? @db.Decimal(12, 2)
+  priceType   String
+  priceVisible Boolean @default(false)
+  enquiry     EventEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  design      CatalogueDesign @relation(fields: [designId], references: [id], onDelete: Restrict)
+  @@unique([enquiryId, designId])
+}
+
+model EnquiryPackage {
+  id          Int      @id @default(autoincrement())
+  enquiryId   Int
+  packageId   Int
+  packageName String
+  price       Decimal? @db.Decimal(12, 2)
+  priceType   String
+  priceVisible Boolean @default(false)
+  enquiry     EventEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  package     EventPackage @relation(fields: [packageId], references: [id], onDelete: Restrict)
+  @@unique([enquiryId, packageId])
+}
+
+model ActivityLog {
+  id         Int      @id @default(autoincrement())
+  userId     Int
+  action     String
+  entityType String
+  entityId   String
+  metadata   String?  @db.Text
+  createdAt  DateTime @default(now())
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Package {
@@ -164,7 +384,6 @@ model TripCollection {
   ameer              Ameer    @relation(fields: [ameerId], references: [id])
   receivedByAdmin    User     @relation("CollectionReceivedBy", fields: [receivedByAdminId], references: [id])
 }
-
 
 
 

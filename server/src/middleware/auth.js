@@ -1,6 +1,5 @@
 import jwt from "jsonwebtoken";
-
-const JWT_SECRET = process.env.JWT_SECRET || "wadi-noor-fallback";
+import { JWT_SECRET } from "../lib/security.js";
 
 export function authenticate(req, res, next) {
   const header = req.headers.authorization || "";

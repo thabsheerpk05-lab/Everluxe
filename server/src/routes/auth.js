@@ -4,9 +4,9 @@ import jwt from "jsonwebtoken";
 import prisma from "../lib/prisma.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { JWT_SECRET } from "../lib/security.js";
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || "wadi-noor-fallback";
 
 router.post("/login", asyncHandler(async (req, res) => {
   const { email, password } = req.body || {};
@@ -15,8 +15,6 @@ router.post("/login", asyncHandler(async (req, res) => {
   }
 
   const user = await prisma.user.findUnique({ where: { email } });
-  console.log(user);
-  
   if (!user) {
     return res.status(401).json({ message: "Invalid credentials" });
   }
@@ -60,7 +58,7 @@ router.get("/me", authenticate, asyncHandler(async (req, res) => {
 }));
 
 router.post("/register", asyncHandler(async (req, res) => {
-  const { name, email, password, role, permissions } = req.body || {};
+  const { name, email, password } = req.body || {};
   if (!name || !email || !password) {
     return res.status(400).json({ message: "Name, email, and password are required" });
   }
@@ -70,36 +68,15 @@ router.post("/register", asyncHandler(async (req, res) => {
     return res.status(409).json({ message: "Email already exists" });
   }
 
-  const staffBase = {
-    can_view_trips: true,
-    can_view_packages: true,
-    can_view_travelers: true,
-    can_edit_travelers: true,
-    can_view_expenses: true,
-    can_edit_expenses: true,
-    can_view_reports: true,
-    can_manage_payments: true
-  };
-  let permissionsObj = typeof permissions === "string" ? JSON.parse(permissions) : (permissions || {});
-  const isAdmin = role === "ADMIN";
-  if (!isAdmin) {
-    if (!permissionsObj.is_ameer || !permissionsObj.ameer_id) {
-      return res.status(400).json({ message: "Staff users must be assigned to an ameer." });
-    }
-    permissionsObj = { ...staffBase, ...permissionsObj, is_ameer: true };
-  } else {
-    permissionsObj = { ...permissionsObj, is_ameer: false };
-    delete permissionsObj.ameer_id;
-  }
-
   const hashed = await bcrypt.hash(password, 10);
   const newUser = await prisma.user.create({
     data: {
       name,
       email,
       password: hashed,
-      role: role === "ADMIN" ? "ADMIN" : "STAFF",
-      permissions: JSON.stringify(permissionsObj)
+      role: "CUSTOMER",
+      permissions: "{}",
+      customerProfile: { create: {} }
     },
     select: { id: true, name: true, email: true, role: true, permissions: true, createdAt: true }
   });
