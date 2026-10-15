@@ -1,63 +1,115 @@
-import { Routes, Route, Navigate } from "react-router-dom";
-import Login from "./pages/Login.jsx";
-import Dashboard from "./pages/Dashboard.jsx";
-import Trips from "./pages/Trips.jsx";
-import Packages from "./pages/Packages.jsx";
-import Travelers from "./pages/Travelers.jsx";
-import Expenses from "./pages/Expenses.jsx";
-import Reports from "./pages/Reports.jsx";
-import Users from "./pages/Users.jsx";
-import Drivers from "./pages/Drivers.jsx";
-import Ameers from "./pages/Ameers.jsx";
-import Providers from "./pages/Providers.jsx";
-import Payments from "./pages/Payments.jsx";
-import Buses from "./pages/Buses.jsx";
-import NotFound from "./pages/NotFound.jsx";
-import DashboardLayout from "./layouts/DashboardLayout.jsx";
-import ProtectedRoute from "./components/ProtectedRoute.jsx";
-import { useAuth } from "./context/AuthContext.jsx";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowDownRight, ArrowRight, ArrowUpRight, Check, ChevronDown, ChevronLeft,
+  ChevronRight, Instagram, Menu, MessageCircle, Phone, Plus, X,
+} from "lucide-react";
+import { API_BASE, assetUrl } from "./api/client.js";
 
-function HomeRoute() {
-  const { user } = useAuth();
-  return user?.role === "ADMIN" ? <Dashboard /> : <Navigate to="/trips" replace />;
+// These catalogues can later be served by a CMS/API and reused by the Everluxe mobile app.
+const services = [
+  { number: "01", title: "Stage Design & Setup", copy: "Statement stages composed around your celebration, its people and its point of view.", image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=85" },
+  { number: "02", title: "Entrance & Welcome Spaces", copy: "The first glimpse, thoughtfully framed with florals, texture and a sense of arrival.", image: "https://images.unsplash.com/photo-1544078751-58fee2d8a03b?auto=format&fit=crop&w=1200&q=85" },
+  { number: "03", title: "Reception Design", copy: "Warm, considered settings that let the reception feel effortless and welcoming.", image: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=1200&q=85" },
+  { number: "04", title: "Backdrops & Photo Areas", copy: "Photographic moments layered with detail, dimension and a naturally beautiful flow.", image: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=85" },
+  { number: "05", title: "Lighting & Ambience", copy: "Light that softens a room, brings out material and creates a memorable atmosphere.", image: "https://images.unsplash.com/photo-1507504031003-b417219a0fde?auto=format&fit=crop&w=1200&q=85" },
+  { number: "06", title: "Decorative Event Elements", copy: "A considered layer of florals, tabletop and architectural finishing touches.", image: "https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&w=1200&q=85" },
+  { number: "07", title: "Custom Event Concepts", copy: "A unique design language developed around the occasion you want to create.", image: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?auto=format&fit=crop&w=1200&q=85" },
+];
+
+const gallery = [
+  { id: 1, category: "Weddings", title: "A soft garden ceremony", image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1600&q=88" },
+  { id: 2, category: "Engagements", title: "An evening in champagne", image: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1600&q=88" },
+  { id: 3, category: "Nikah", title: "Sunlit florals & texture", image: "https://images.unsplash.com/photo-1507504031003-b417219a0fde?auto=format&fit=crop&w=1600&q=88" },
+  { id: 4, category: "Receptions", title: "The afterglow reception", image: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=1600&q=88" },
+  { id: 5, category: "Birthdays", title: "A lively entrance", image: "https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=1600&q=88" },
+  { id: 6, category: "Corporate", title: "A night of presence", image: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1600&q=88" },
+  { id: 7, category: "Other Events", title: "A room in bloom", image: "https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&w=1600&q=88" },
+  { id: 8, category: "Weddings", title: "An intimate gathering", image: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?auto=format&fit=crop&w=1600&q=88" },
+];
+
+const styles = [
+  { name: "Minimal", eyebrow: "Quietly considered", image: "https://images.unsplash.com/photo-1519225421980-715cb0215aed?auto=format&fit=crop&w=1200&q=85" },
+  { name: "Elegant", eyebrow: "Endlessly refined", image: "https://images.unsplash.com/photo-1507504031003-b417219a0fde?auto=format&fit=crop&w=1200&q=85" },
+  { name: "Contemporary", eyebrow: "Sculptural & current", image: "https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=1200&q=85" },
+  { name: "Grand", eyebrow: "Made for a moment", image: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=1200&q=85" },
+  { name: "Luxury", eyebrow: "Layers of richness", image: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?auto=format&fit=crop&w=1200&q=85" },
+  { name: "Bespoke", eyebrow: "Entirely your own", image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=85" },
+];
+
+const eventTypes = [
+  { name: "Weddings", image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80" },
+  { name: "Engagements", image: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=80" },
+  { name: "Nikah", image: "https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&w=1200&q=80" },
+  { name: "Receptions", image: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=1200&q=80" },
+  { name: "Birthday Celebrations", image: "https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=1200&q=80" },
+  { name: "Corporate Events", image: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80" },
+];
+
+const navItems = [["Our work", "work"], ["Services", "services"], ["Design styles", "styles"], ["Contact", "contact"]];
+const quoteServices = services.map((service) => service.title);
+const brandPoster = "/brand/everluxe-first-look.png";
+const defaultBusiness = { businessName: "EVERLUXE EVENTS", publicEmail: "everluxeevents123@gmail.com", phone: "+91 97452 27257", whatsapp: "+91 97452 27257", instagram: "ever.luxe_events", location: "Nilambur, Malappuram, Kerala, India", serviceArea: "Across Kerala", heroMode: "DEFAULT", heroImageUrl: null, logoUrl: "/brand/everluxe-logo.png" };
+const scrollToSection = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+function Mark({ compact = false, logoUrl = defaultBusiness.logoUrl }) {
+  return <img className={`brand-mark ${compact ? "brand-mark--compact" : ""}`} src={assetUrl(logoUrl)} alt="Everluxe Events" />;
 }
 
-function AdminRoute({ children }) {
-  const { user } = useAuth();
-  return user?.role === "ADMIN" ? children : <Navigate to="/trips" replace />;
+function Button({ children, kind = "primary", className = "", onClick, href, type = "button" }) {
+  const content = <>{children}<ArrowDownRight size={17} strokeWidth={1.6} /></>;
+  return href ? <a className={`button button--${kind} ${className}`} href={href}>{content}</a> : <button type={type} className={`button button--${kind} ${className}`} onClick={onClick}>{content}</button>;
+}
+
+function Lightbox({ selected, onClose, onNavigate }) {
+  const startX = useRef(null);
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === "Escape") onClose(); if (event.key === "ArrowRight") onNavigate(1); if (event.key === "ArrowLeft") onNavigate(-1); };
+    document.addEventListener("keydown", onKey); document.body.style.overflow = "hidden";
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; };
+  }, [onClose, onNavigate]);
+  return <div className="lightbox" role="dialog" aria-modal="true" aria-label="Gallery image" onClick={onClose}>
+    <div className="lightbox__top"><span>EVERLUXE <i>EVENTS</i></span><span>{selected.category} / visual concept</span></div>
+    <button className="lightbox__close" onClick={onClose} aria-label="Close gallery"><X size={25} /></button>
+    <button className="lightbox__arrow lightbox__arrow--prev" onClick={(e) => { e.stopPropagation(); onNavigate(-1); }} aria-label="Previous image"><ChevronLeft /></button>
+    <figure className="lightbox__figure" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => { startX.current = e.clientX; }} onPointerUp={(e) => { if (startX.current && Math.abs(e.clientX - startX.current) > 50) onNavigate(e.clientX < startX.current ? 1 : -1); startX.current = null; }}><img src={selected.image} alt={selected.title} /><figcaption><span>{selected.title}</span><small>Swipe or use arrows to explore</small></figcaption></figure>
+    <button className="lightbox__arrow lightbox__arrow--next" onClick={(e) => { e.stopPropagation(); onNavigate(1); }} aria-label="Next image"><ChevronRight /></button>
+  </div>;
 }
 
 export default function App() {
-  return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <DashboardLayout />
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<HomeRoute />} />
-        <Route path="trips" element={<Trips />} />
-        <Route path="packages" element={<AdminRoute><Packages /></AdminRoute>} />
-        <Route path="travelers" element={<Travelers />} />
-        <Route path="expenses" element={<Expenses />} />
-        <Route path="reports" element={<Reports />} />
-        <Route path="users" element={<Users />} />
-        <Route path="drivers" element={<Drivers />} />
-        <Route path="ameers" element={<Ameers />} />
-        <Route path="providers" element={<Providers />} />
-        <Route path="payments" element={<Payments />} />
-        <Route path="buses" element={<AdminRoute><Buses /></AdminRoute>} />
-      </Route>
-      <Route path="*" element={<NotFound />} />
-      <Route path="/home" element={<Navigate to="/" replace />} />
-    </Routes>
-  );
+  const [menuOpen, setMenuOpen] = useState(false); const [activeFilter, setActiveFilter] = useState("All"); const [selectedId, setSelectedId] = useState(null); const [quoteSent, setQuoteSentInternal] = useState(false); const [selectedServices, setSelectedServices] = useState([]); const [business, setBusiness] = useState(defaultBusiness); const [quoteError, setQuoteError] = useState(""); const [submittingQuote, setSubmittingQuote] = useState(false);
+  useEffect(() => { fetch(`${API_BASE}/everluxe/public/settings`).then((response) => response.ok ? response.json() : Promise.reject()).then((data) => setBusiness({ ...defaultBusiness, ...data })).catch(() => {}); }, []);
+  const visibleGallery = useMemo(() => activeFilter === "All" ? gallery : gallery.filter((item) => item.category === activeFilter), [activeFilter]);
+  const selected = gallery.find((item) => item.id === selectedId);
+  const chooseImage = (direction) => { const index = gallery.findIndex((item) => item.id === selectedId); setSelectedId(gallery[(index + direction + gallery.length) % gallery.length].id); };
+  const goTo = (id) => { setMenuOpen(false); scrollToSection(id); };
+  const toggleService = (service) => setSelectedServices((current) => current.includes(service) ? current.filter((item) => item !== service) : [...current, service]);
+  const submitQuote = (event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const details = [["Name", data.get("fullName")], ["Phone", data.get("phone")], ["WhatsApp", data.get("whatsapp")], ["Event", data.get("eventType")], ["Date", data.get("date")], ["Location", data.get("location")], ["Guests", data.get("guests")], ["Style", data.get("style")], ["Services", selectedServices.join(", ")], ["Budget", data.get("budget")], ["Message", data.get("message")]].filter(([, value]) => value).map(([label, value]) => `*${label}:* ${value}`).join("\n"); const message = `Hello Everluxe Events, I would like to request a quote.\n\n${details}`; window.open(`https://wa.me/919745227257?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer"); setQuoteSentInternal(true); };
+
+  return <main>
+    <header className="site-header"><button className="menu-toggle" aria-label="Open navigation" onClick={() => setMenuOpen(true)}><Menu size={22} /></button><button className="logo-button" aria-label="Go to top" onClick={() => scrollToSection("top")}><Mark compact logoUrl={business.logoUrl} /></button><nav className="desktop-nav" aria-label="Main navigation">{navItems.map(([label, id]) => <button key={id} onClick={() => goTo(id)}>{label}</button>)}</nav><button className="header-cta" onClick={() => goTo("quote")}>Plan your event <ArrowDownRight size={17} /></button></header>
+
+    <div className={`mobile-menu ${menuOpen ? "mobile-menu--open" : ""}`}><div className="mobile-menu__bar"><Mark compact logoUrl={business.logoUrl} /><button onClick={() => setMenuOpen(false)} aria-label="Close navigation"><X /></button></div><div className="mobile-menu__links">{navItems.map(([label, id], index) => <button key={id} onClick={() => goTo(id)}><span>0{index + 1}</span>{label}<ArrowRight size={20} /></button>)}<button onClick={() => goTo("quote")}><span>05</span>Request a quote<ArrowRight size={20} /></button></div><a className="mobile-menu__phone" href={`tel:${business.phone.replace(/\s/g, "")}`}><Phone size={17} /> {business.phone}</a></div>
+
+    <section className={`hero ${business.heroMode === "IMAGE" && business.heroImageUrl ? "hero--with-image" : "hero--default"}`} id="top">{business.heroMode === "IMAGE" && business.heroImageUrl && <img className="hero__image" src={assetUrl(business.heroImageUrl)} alt="Everluxe Events cover" />}<div className="hero__wash" /><div className="hero__frame hero__frame--left" /><div className="hero__frame hero__frame--right" /><div className="hero__content container"><p className="eyebrow eyebrow--light"><span /> Event design studio · Kerala</p><h1>Where every entrance<br /><em>becomes a moment.</em></h1><div className="hero__footer"><p>Elegant stages, entrances and event spaces designed to make your special moments unforgettable.</p><div className="hero__actions"><Button onClick={() => goTo("work")}>Explore our work</Button><Button kind="ghost" onClick={() => goTo("quote")}>Plan your event</Button></div></div></div><button className="scroll-cue" aria-label="Scroll to introduction" onClick={() => goTo("introduction")}><span>Scroll to discover</span><ArrowDownRight size={18} /></button></section>
+
+    <section className="introduction section" id="introduction"><div className="container intro-grid"><figure className="intro-grid__poster"><img src={brandPoster} alt="Everluxe Events first-look poster" /><figcaption>Our first look <span>✦</span></figcaption></figure><div className="intro-grid__content"><p className="eyebrow">The Everluxe approach</p><p className="large-copy">We compose the spaces around your celebration — from the first welcome to the final photograph.</p><div className="intro-grid__bottom"><p>Everluxe creates elegant visual environments for celebrations across Kerala. Every stage, entrance, reception and detail is designed to feel considered, personal and beautifully complete.</p><button className="text-link" onClick={() => goTo("services")}>Discover our craft <ArrowRight size={17} /></button></div></div></div></section>
+
+    <section className="services section section--sand" id="services"><div className="container"><div className="section-heading"><div><p className="eyebrow">What we create</p><h2>Spaces with a<br /><em>lasting impression.</em></h2></div><p>From a singular photo moment to a fully considered event environment, every element has a place and a purpose.</p></div><div className="services-grid">{services.map((service) => <article className="service-card" key={service.title}><div className="service-card__image"><img src={service.image} alt="" /><span>{service.number}</span></div><div className="service-card__text"><h3>{service.title}</h3><p>{service.copy}</p><button onClick={() => goTo("quote")} aria-label={`Enquire about ${service.title}`}><ArrowDownRight size={20} /></button></div></article>)}</div></div></section>
+
+    <section className="portfolio section" id="work"><div className="container"><div className="section-heading section-heading--portfolio"><div><p className="eyebrow">A visual preview</p><h2>Scenes waiting to<br /><em>be remembered.</em></h2></div><p>Our portfolio will grow with original Everluxe celebrations. Until then, these curated visual studies share the kind of atmosphere we love to create.</p></div><div className="filters" aria-label="Filter gallery"><button className={activeFilter === "All" ? "active" : ""} onClick={() => setActiveFilter("All")}>All</button>{["Weddings", "Engagements", "Nikah", "Receptions", "Birthdays", "Corporate", "Other Events"].map((filter) => <button className={activeFilter === filter ? "active" : ""} key={filter} onClick={() => setActiveFilter(filter)}>{filter}</button>)}</div><div className="gallery-grid">{visibleGallery.map((item, index) => <button className={`gallery-item gallery-item--${(index % 5) + 1}`} key={item.id} onClick={() => setSelectedId(item.id)}><img src={item.image} alt={`${item.title} — ${item.category} visual concept`} /><span className="gallery-item__shade" /><span className="gallery-item__meta"><small>{item.category}</small><strong>{item.title}</strong></span><span className="gallery-item__open"><Plus size={22} /></span></button>)}</div><p className="portfolio-note">Visual studies are temporary placeholders and not past Everluxe projects.</p></div></section>
+
+    <section className="design-styles section section--dark" id="styles"><div className="container"><div className="section-heading"><div><p className="eyebrow eyebrow--light">Your visual language</p><h2>Find the feeling<br /><em>that feels like you.</em></h2></div><p>Start with a direction, then make it personal. Our design vocabulary gives every celebration a distinct point of view.</p></div><div className="style-rail">{styles.map((style, index) => <button className="style-tile" key={style.name} onClick={() => goTo("quote")}><img src={style.image} alt="" /><span className="style-tile__shade" /><span className="style-tile__number">0{index + 1}</span><span className="style-tile__title"><small>{style.eyebrow}</small><strong>{style.name}</strong></span><ArrowDownRight className="style-tile__arrow" size={21} /></button>)}</div></div></section>
+
+    <section className="events section" id="events"><div className="container"><div className="events-layout"><div className="events-layout__title"><p className="eyebrow">Celebrations, beautifully set</p><h2>Made for every<br /><em>kind of gathering.</em></h2><p>Whatever brings people together, we shape the setting around it.</p><Button kind="outline" onClick={() => goTo("quote")}>Tell us your plans</Button></div><div className="events-list">{eventTypes.map((event, index) => <article key={event.name} className="event-row"><span>0{index + 1}</span><div className="event-row__image"><img src={event.image} alt="" /></div><h3>{event.name}</h3><ArrowRight size={20} /></article>)}</div></div></div></section>
+
+    <section className="process section section--sand" id="process"><div className="container"><div className="process-head"><p className="eyebrow">A clear, considered process</p><h2>From the first<br /><em>conversation to the reveal.</em></h2></div><div className="process-grid">{[["01", "Tell us about your event", "Share your event type, date, location and the moments you want to create."], ["02", "Discover your style", "Choose a design direction or begin a conversation around a custom concept."], ["03", "Plan your setup", "Together, we develop the stage, entrance, reception and visual flow."], ["04", "Bring it to life", "Our team brings every chosen element together for a beautifully finished event."]].map(([number, title, copy]) => <article className="process-step" key={number}><span>{number}</span><div><h3>{title}</h3><p>{copy}</p></div></article>)}</div></div></section>
+
+    <section className="quote section" id="quote"><div className="container quote-layout"><div className="quote-intro"><p className="eyebrow">Let’s begin</p><h2>Tell us about<br /><em>your moment.</em></h2><p>Share a few details and we’ll be in touch to explore what’s possible for your celebration.</p><div className="quote-intro__line" /><p className="quote-intro__contact">Prefer a conversation?<br /><a href="https://wa.me/919745227257" target="_blank" rel="noreferrer">WhatsApp us <ArrowUpRight /></a></p></div>{quoteSent ? <div className="form-success"><div><Check size={35} /></div><p className="eyebrow">Continue on WhatsApp</p><h3>Your enquiry is ready to send.</h3><p>WhatsApp has opened with your event details. Please tap Send there and we’ll be in touch.</p><Button kind="outline" onClick={() => setQuoteSentInternal(false)}>Send another enquiry</Button></div> : <form className="quote-form" onSubmit={submitQuote}><div className="form-grid"><label>Full name<input required name="fullName" placeholder="Your name" /></label><label>Phone number<input required name="phone" type="tel" placeholder="+91" /></label><label>WhatsApp number<input name="whatsapp" type="tel" placeholder="If different" /></label><label>Event type<select required name="eventType" defaultValue=""><option disabled value="">Choose an event</option>{eventTypes.map((event) => <option key={event.name}>{event.name}</option>)}<option>Other special event</option></select><ChevronDown /></label><label>Event date<input name="date" type="date" /></label><label>Event location<input name="location" placeholder="City / venue" /></label><label>Expected guest count<input name="guests" type="number" min="1" placeholder="Approximate number" /></label><label>Preferred design style<select name="style" defaultValue=""><option value="">Open to ideas</option>{styles.map((style) => <option key={style.name}>{style.name}</option>)}</select><ChevronDown /></label></div><fieldset><legend>Services required <span>(select all that apply)</span></legend><div className="service-choices">{quoteServices.map((service) => <button type="button" className={selectedServices.includes(service) ? "selected" : ""} key={service} onClick={() => toggleService(service)}>{selectedServices.includes(service) && <Check size={14} />}{service}</button>)}</div></fieldset><div className="form-grid form-grid--bottom"><label>Budget range <span>(optional)</span><select name="budget" defaultValue=""><option value="">Select a range</option><option>Under ₹50,000</option><option>₹50,000 – ₹1,00,000</option><option>₹1,00,000 – ₹2,50,000</option><option>₹2,50,000+</option></select><ChevronDown /></label><label>Additional message<textarea name="message" placeholder="Tell us a little more about what you have in mind..." rows="4" /></label></div><div className="form-submit"><p>By submitting, we’ll open WhatsApp with your event details ready to send.</p><Button type="submit">Request a quote</Button></div></form>}</div></section>
+
+    <section className="contact" id="contact"><div className="container"><p className="eyebrow eyebrow--light">Everluxe Events</p><div className="contact__main"><h2>Let’s make an<br /><em>entrance together.</em></h2><div className="contact__links"><a href="https://wa.me/919745227257" target="_blank" rel="noreferrer"><MessageCircle /> WhatsApp us <ArrowRight /></a><a href="tel:+919745227257"><Phone /> Call us <ArrowRight /></a><a href="https://instagram.com/ever.luxe_events" target="_blank" rel="noreferrer"><Instagram /> Instagram <ArrowRight /></a></div></div><div className="contact__details"><p>Nilambur, Malappuram<br />Kerala, India · Serving all across Kerala</p><p><a href="tel:+919745227257">+91 97452 27257</a><br /><a href="mailto:everluxeevents123@gmail.com">everluxeevents123@gmail.com</a></p></div></div></section>
+
+    <footer className="footer"><div className="container"><div className="footer__top"><Mark /><p>Where Every Entrance<br />Becomes a Moment.</p><button className="footer__top-button" onClick={() => scrollToSection("top")}>Back to top <ArrowDownRight size={18} /></button></div><div className="footer__bottom"><p>© {new Date().getFullYear()} Everluxe Events. All rights reserved.</p><div><button onClick={() => goTo("services")}>Services</button><button onClick={() => goTo("work")}>Our work</button><button onClick={() => goTo("quote")}>Request a quote</button><a href="https://instagram.com/ever.luxe_events" target="_blank" rel="noreferrer">Instagram</a></div></div></div></footer>
+    <a className="whatsapp-float" href="https://wa.me/919745227257" target="_blank" rel="noreferrer" aria-label="Message Everluxe on WhatsApp"><MessageCircle size={22} /></a>{selected && <Lightbox selected={selected} onClose={() => setSelectedId(null)} onNavigate={chooseImage} />}
+  </main>;
 }
-
-
-
-

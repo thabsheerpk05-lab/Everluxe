@@ -1,19 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
+import AdminPortal from "./AdminPortal.jsx";
 import "./index.css";
-import { AuthProvider } from "./context/AuthContext.jsx";
-import { ToastProvider } from "./context/ToastContext.jsx";
 
-ReactDOM.createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <AuthProvider>
-        <ToastProvider>
-          <App />
-        </ToastProvider>
-      </AuthProvider>
-    </BrowserRouter>
-  </React.StrictMode>
-);
+const rootView = window.location.pathname.startsWith("/admin") ? <AdminPortal /> : <App />;
+ReactDOM.createRoot(document.getElementById("root")).render(<React.StrictMode>{rootView}</React.StrictMode>);
