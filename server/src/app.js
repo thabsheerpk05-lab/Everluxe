@@ -4,17 +4,7 @@ import morgan from "morgan";
 import path from "path";
 
 import authRoutes from "./routes/auth.js";
-import packageRoutes from "./routes/packages.js";
-import tripRoutes from "./routes/trips.js";
-import travelerRoutes from "./routes/travelers.js";
-import expenseRoutes from "./routes/expenses.js";
-import reportRoutes from "./routes/reports.js";
 import userRoutes from "./routes/users.js";
-import driverRoutes from "./routes/drivers.js";
-import ameerRoutes from "./routes/ameers.js";
-import providerRoutes from "./routes/providers.js";
-import busRoutes from "./routes/buses.js";
-import collectionRoutes from "./routes/collections.js";
 import everluxeRoutes from "./routes/everluxe.js";
 import prisma from "./lib/prisma.js";
 import { asyncHandler } from "./utils/asyncHandler.js";
@@ -49,17 +39,7 @@ app.get("/api/health", asyncHandler(async (_req, res) => {
 }));
 
 app.use("/api/auth", authRoutes);
-app.use("/api/packages", packageRoutes);
-app.use("/api/trips", tripRoutes);
-app.use("/api/travelers", travelerRoutes);
-app.use("/api/expenses", expenseRoutes);
-app.use("/api/reports", reportRoutes);
 app.use("/api/users", userRoutes);
-app.use("/api/drivers", driverRoutes);
-app.use("/api/ameers", ameerRoutes);
-app.use("/api/providers", providerRoutes);
-app.use("/api/buses", busRoutes);
-app.use("/api/collections", collectionRoutes);
 app.use("/api/everluxe", everluxeRoutes);
 
 app.use((err, _req, res, _next) => {
