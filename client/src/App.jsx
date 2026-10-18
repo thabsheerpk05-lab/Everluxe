@@ -49,7 +49,7 @@ const navItems = [["Our work", "work"], ["Services", "services"], ["Design style
 const quoteServices = services.map((service) => service.title);
 const brandPoster = "/brand/everluxe-first-look.png";
 const defaultBusiness = { businessName: "EVERLUXE EVENTS", publicEmail: "everluxeevents123@gmail.com", phone: "+91 97452 27257", whatsapp: "+91 97452 27257", instagram: "ever.luxe_events", location: "Nilambur, Malappuram, Kerala, India", serviceArea: "Across Kerala", heroMode: "DEFAULT", heroImageUrl: null, logoUrl: "/brand/everluxe-logo.png" };
-const scrollToSection = (id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+const scrollToSection = (id) => { const element = document.getElementById(id); if (!element) return; window.scrollTo({ top: Math.max(0, element.getBoundingClientRect().top + window.scrollY - 24), behavior: "smooth" }); };
 
 function Mark({ compact = false, logoUrl = defaultBusiness.logoUrl }) {
   return <img className={`brand-mark ${compact ? "brand-mark--compact" : ""}`} src={assetUrl(logoUrl)} alt="Everluxe Events" />;
