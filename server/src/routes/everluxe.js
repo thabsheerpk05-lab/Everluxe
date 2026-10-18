@@ -37,7 +37,7 @@ router.get("/public/packages", asyncHandler(async (req, res) => {
 }));
 
 router.get("/public/gallery", asyncHandler(async (_req, res) => {
-  res.json(await prisma.galleryItem.findMany({ where: active, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }] }));
+  res.json(await prisma.galleryItem.findMany({ where: active, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }], include: { eventType: true, designStyle: true } }));
 }));
 
 router.get("/public/taxonomies", asyncHandler(async (_req, res) => {

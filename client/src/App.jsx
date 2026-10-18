@@ -16,7 +16,7 @@ const services = [
   { number: "07", title: "Custom Event Concepts", copy: "A unique design language developed around the occasion you want to create.", image: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?auto=format&fit=crop&w=1200&q=85" },
 ];
 
-const gallery = [
+const fallbackGallery = [
   { id: 1, category: "Weddings", title: "A soft garden ceremony", image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1600&q=88" },
   { id: 2, category: "Engagements", title: "An evening in champagne", image: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1600&q=88" },
   { id: 3, category: "Nikah", title: "Sunlit florals & texture", image: "https://images.unsplash.com/photo-1507504031003-b417219a0fde?auto=format&fit=crop&w=1600&q=88" },
@@ -77,8 +77,8 @@ function Lightbox({ selected, onClose, onNavigate }) {
 }
 
 export default function App() {
-  const [menuOpen, setMenuOpen] = useState(false); const [activeFilter, setActiveFilter] = useState("All"); const [selectedId, setSelectedId] = useState(null); const [quoteSent, setQuoteSentInternal] = useState(false); const [selectedServices, setSelectedServices] = useState([]); const [business, setBusiness] = useState(defaultBusiness); const [quoteError, setQuoteError] = useState(""); const [submittingQuote, setSubmittingQuote] = useState(false);
-  useEffect(() => { fetch(`${API_BASE}/everluxe/public/settings`).then((response) => response.ok ? response.json() : Promise.reject()).then((data) => setBusiness({ ...defaultBusiness, ...data })).catch(() => {}); }, []);
+  const [menuOpen, setMenuOpen] = useState(false); const [activeFilter, setActiveFilter] = useState("All"); const [selectedId, setSelectedId] = useState(null); const [quoteSent, setQuoteSentInternal] = useState(false); const [selectedServices, setSelectedServices] = useState([]); const [business, setBusiness] = useState(defaultBusiness); const [gallery, setGallery] = useState(fallbackGallery); const [quoteError, setQuoteError] = useState(""); const [submittingQuote, setSubmittingQuote] = useState(false);
+  useEffect(() => { Promise.all([fetch(`${API_BASE}/everluxe/public/settings`), fetch(`${API_BASE}/everluxe/public/gallery`)]).then(async ([settingsResponse, galleryResponse]) => { if (settingsResponse.ok) setBusiness({ ...defaultBusiness, ...(await settingsResponse.json()) }); if (galleryResponse.ok) { const items = await galleryResponse.json(); if (items.length) setGallery(items.map((item) => ({ id: item.id, category: item.eventType?.name || "Other Events", title: item.title, image: assetUrl(item.imageUrl), caption: item.caption }))); } }).catch(() => {}); }, []);
   const visibleGallery = useMemo(() => activeFilter === "All" ? gallery : gallery.filter((item) => item.category === activeFilter), [activeFilter]);
   const selected = gallery.find((item) => item.id === selectedId);
   const chooseImage = (direction) => { const index = gallery.findIndex((item) => item.id === selectedId); setSelectedId(gallery[(index + direction + gallery.length) % gallery.length].id); };
