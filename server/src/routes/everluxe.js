@@ -69,7 +69,7 @@ router.post("/public/enquiries", asyncHandler(async (req, res) => {
   const enquiry = await prisma.eventEnquiry.create({
     data: {
       reference: makePublicId("EVQ"), fullName: fullName.trim(), phone: phone.trim(), whatsapp: whatsapp?.trim() || null,
-      eventTypeId: eventTypeId ? Number(eventTypeId) : null, eventDate: eventDate ? new Date(eventDate) : null, eventLocation: eventLocation?.trim() || null,
+      eventTypeId: eventTypeId && Number.isFinite(Number(eventTypeId)) ? Number(eventTypeId) : null, eventDate: eventDate ? new Date(eventDate) : null, eventLocation: eventLocation?.trim() || null,
       guestCount: guestCount ? Number(guestCount) : null, preferredStyle: preferredStyle || null, budgetRange: budgetRange || null, message: message?.trim() || null,
       selectedDesigns: { create: designs.map((design) => ({ designId: design.id, designName: design.name, price: design.price, priceType: design.priceType, priceVisible: design.priceVisibility === "PUBLIC" })) },
       selectedPackages: { create: packages.map((pkg) => ({ packageId: pkg.id, packageName: pkg.name, price: pkg.price, priceType: pkg.priceType, priceVisible: pkg.priceVisibility === "PUBLIC" })) },
