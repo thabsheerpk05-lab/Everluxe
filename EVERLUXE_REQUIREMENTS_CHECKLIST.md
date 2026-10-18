@@ -15,7 +15,7 @@
 | Secure customer reference-photo uploads | IN PROGRESS | Backend validates/stores private attachment data records; visible multi-file input and live access test remain. |
 | Quotation management and historical snapshots | IN PROGRESS | Admin quotation creation/status/history UI is wired; snapshots and revision history persist server-side; live DB test remains blocked. |
 | Secure admin password change | IN PROGRESS | Auth endpoint added; admin UI and live test still required. |
-| Customer accounts and event profiles | IN PROGRESS | Registration/profile APIs and `/account` event-profile screen added; live authenticated test pending. |
+| Customer accounts and event profiles | VERIFIED (deferred) | Customer accounts are intentionally not exposed in v1; backend event-profile structure remains available for a future customer portal. |
 | ADMIN/CUSTOMER authorization | IN PROGRESS | Admin middleware and customer-scoped event-profile routes are present; live authorization test pending. |
 | Demo cleanup and responsive integration | IN PROGRESS | Admin navigation is now wired; final responsive/demo-data review remains. |
 | Frontend/backend feature tests | IN PROGRESS | Build and Prisma validation pass; Neon-backed API test is currently blocked by connection refusal. |
