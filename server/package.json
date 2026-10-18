@@ -1,5 +1,5 @@
 {
-  "name": "wadi-noor-server",
+  "name": "everluxe-server",
   "type": "module",
   "scripts": {
     "dev": "nodemon src/index.js",
