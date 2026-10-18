@@ -103,7 +103,7 @@ h1 em, h2 em { color: var(--gold); font-style: italic; }
 .gallery-grid { display: grid; grid-auto-flow: dense; grid-template-columns: repeat(4, 1fr); grid-template-rows: 210px 210px; gap: 12px; }
 .gallery-item { background: #d8d0c5; border: 0; min-height: 0; overflow: hidden; padding: 0; position: relative; text-align: left; }
 .gallery-item--1 { grid-row: span 2; }.gallery-item--2 { grid-column: span 2; }.gallery-item--3 { grid-column: span 1; }.gallery-item--4 { grid-row: span 2; }.gallery-item--5 { grid-column: span 2; }
-.gallery-item img, .gallery-item__shade { height: 100%; inset: 0; position: absolute; width: 100%; }
+.gallery-item img, .gallery-item video, .gallery-item__shade { height: 100%; inset: 0; position: absolute; width: 100%; }
 .gallery-item img { object-fit: cover; transition: transform .7s cubic-bezier(.2,.6,.2,1); }.gallery-item__shade { background: linear-gradient(180deg, rgba(25,16,8,0) 30%, rgba(25,16,8,.62)); opacity: .7; transition: opacity .3s; }
 .gallery-item__meta { bottom: 18px; color: #fffdf9; display: grid; gap: 5px; left: 18px; position: absolute; z-index: 2; }.gallery-item__meta small { font-size: 9px; letter-spacing: .14em; text-transform: uppercase; }.gallery-item__meta strong { font-family: 'Instrument Serif', Georgia, serif; font-size: 24px; font-weight: 400; line-height: 1; }
 .gallery-item__open { align-items: center; background: #f9f5ef; border-radius: 50%; color: var(--ink); display: flex; height: 42px; justify-content: center; opacity: 0; position: absolute; right: 16px; top: 16px; transform: translateY(8px); transition: opacity .25s, transform .25s; width: 42px; z-index: 2; }

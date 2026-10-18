@@ -60,6 +60,7 @@ router.post("/public/enquiries", asyncHandler(async (req, res) => {
     packageIds.length ? prisma.eventPackage.findMany({ where: { id: { in: packageIds.map(Number) } } }) : [],
     addonIds.length ? prisma.approvedAddon.findMany({ where: { id: { in: addonIds.map(Number) } } }) : []
   ]);
+  const privateAttachments = await Promise.all((Array.isArray(attachments) ? attachments : []).slice(0, 5).map(async (item) => ({ fileUrl: item.dataUrl ? await storeImage(item.dataUrl) : item.fileUrl, originalName: item.originalName || "reference-image", mimeType: item.mimeType || "image/*", sizeBytes: Number(item.sizeBytes || 0) })));
   const enquiry = await prisma.eventEnquiry.create({
     data: {
       reference: makePublicId("EVQ"), fullName: fullName.trim(), phone: phone.trim(), whatsapp: whatsapp?.trim() || null,
@@ -68,7 +69,7 @@ router.post("/public/enquiries", asyncHandler(async (req, res) => {
       selectedDesigns: { create: designs.map((design) => ({ designId: design.id, designName: design.name, price: design.price, priceType: design.priceType, priceVisible: design.priceVisibility === "PUBLIC" })) },
       selectedPackages: { create: packages.map((pkg) => ({ packageId: pkg.id, packageName: pkg.name, price: pkg.price, priceType: pkg.priceType, priceVisible: pkg.priceVisibility === "PUBLIC" })) },
       selectedAddons: { create: addons.map((addon) => ({ addonId: addon.id, addonName: addon.name, price: addon.price })) },
-      attachments: { create: (Array.isArray(attachments) ? attachments : []).slice(0, 8).filter((item) => item?.fileUrl && item?.originalName).map((item) => ({ fileUrl: item.fileUrl, originalName: item.originalName, mimeType: item.mimeType || "application/octet-stream", sizeBytes: Number(item.sizeBytes || 0) })) }
+      attachments: { create: privateAttachments.filter((item) => item.fileUrl && item.originalName) }
     },
     select: { reference: true, createdAt: true }
   });
