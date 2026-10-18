@@ -17,11 +17,12 @@ const configuredOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
 const vercelOrigin = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null;
 const allowedOrigins = new Set([...configuredOrigins, vercelOrigin].filter(Boolean));
 const isVercelOrigin = (origin) => origin === "https://everluxe-indol.vercel.app";
+const isLocalOrigin = (origin) => origin === "http://localhost:5173" || origin === "http://127.0.0.1:5173" || origin === "http://localhost:5174" || origin === "http://127.0.0.1:5174";
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.has(origin) || isVercelOrigin(origin)) return callback(null, true);
+      if (!origin || allowedOrigins.has(origin) || isVercelOrigin(origin) || isLocalOrigin(origin)) return callback(null, true);
       return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true
