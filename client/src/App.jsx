@@ -7,13 +7,13 @@ import { API_BASE, assetUrl } from "./api/client.js";
 
 // These catalogues can later be served by a CMS/API and reused by the Everluxe mobile app.
 const services = [
-  { number: "01", title: "Stage Design & Setup", copy: "Statement stages composed around your celebration, its people and its point of view.", image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=85" },
-  { number: "02", title: "Entrance & Welcome Spaces", copy: "The first glimpse, thoughtfully framed with florals, texture and a sense of arrival.", image: "https://images.unsplash.com/photo-1544078751-58fee2d8a03b?auto=format&fit=crop&w=1200&q=85" },
-  { number: "03", title: "Reception Design", copy: "Warm, considered settings that let the reception feel effortless and welcoming.", image: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=1200&q=85" },
-  { number: "04", title: "Backdrops & Photo Areas", copy: "Photographic moments layered with detail, dimension and a naturally beautiful flow.", image: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=85" },
-  { number: "05", title: "Lighting & Ambience", copy: "Light that softens a room, brings out material and creates a memorable atmosphere.", image: "https://images.unsplash.com/photo-1507504031003-b417219a0fde?auto=format&fit=crop&w=1200&q=85" },
-  { number: "06", title: "Decorative Event Elements", copy: "A considered layer of florals, tabletop and architectural finishing touches.", image: "https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&w=1200&q=85" },
-  { number: "07", title: "Custom Event Concepts", copy: "A unique design language developed around the occasion you want to create.", image: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?auto=format&fit=crop&w=1200&q=85" },
+  { number: "01", title: "Stage Design & Setup", copy: "Statement stages composed around your celebration, its people and its point of view.", image: "/brand/everluxe-first-look.png" },
+  { number: "02", title: "Entrance & Welcome Spaces", copy: "The first glimpse, thoughtfully framed with florals, texture and a sense of arrival.", image: "/brand/everluxe-first-look.png" },
+  { number: "03", title: "Reception Design", copy: "Warm, considered settings that let the reception feel effortless and welcoming.", image: "/brand/everluxe-first-look.png" },
+  { number: "04", title: "Backdrops & Photo Areas", copy: "Photographic moments layered with detail, dimension and a naturally beautiful flow.", image: "/brand/everluxe-first-look.png" },
+  { number: "05", title: "Lighting & Ambience", copy: "Light that softens a room, brings out material and creates a memorable atmosphere.", image: "/brand/everluxe-first-look.png" },
+  { number: "06", title: "Decorative Event Elements", copy: "A considered layer of florals, tabletop and architectural finishing touches.", image: "/brand/everluxe-first-look.png" },
+  { number: "07", title: "Custom Event Concepts", copy: "A unique design language developed around the occasion you want to create.", image: "/brand/everluxe-first-look.png" },
 ];
 
 // The public portfolio is database-driven. Empty fallback prevents demo imagery
@@ -21,21 +21,21 @@ const services = [
 const fallbackGallery = [];
 
 const styles = [
-  { name: "Minimal", eyebrow: "Quietly considered", image: "https://images.unsplash.com/photo-1519225421980-715cb0215aed?auto=format&fit=crop&w=1200&q=85" },
-  { name: "Elegant", eyebrow: "Endlessly refined", image: "https://images.unsplash.com/photo-1507504031003-b417219a0fde?auto=format&fit=crop&w=1200&q=85" },
-  { name: "Contemporary", eyebrow: "Sculptural & current", image: "https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=1200&q=85" },
-  { name: "Grand", eyebrow: "Made for a moment", image: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=1200&q=85" },
-  { name: "Luxury", eyebrow: "Layers of richness", image: "https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?auto=format&fit=crop&w=1200&q=85" },
-  { name: "Bespoke", eyebrow: "Entirely your own", image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=85" },
+  { name: "Minimal", eyebrow: "Quietly considered", image: "/brand/everluxe-first-look.png" },
+  { name: "Elegant", eyebrow: "Endlessly refined", image: "/brand/everluxe-first-look.png" },
+  { name: "Contemporary", eyebrow: "Sculptural & current", image: "/brand/everluxe-first-look.png" },
+  { name: "Grand", eyebrow: "Made for a moment", image: "/brand/everluxe-first-look.png" },
+  { name: "Luxury", eyebrow: "Layers of richness", image: "/brand/everluxe-first-look.png" },
+  { name: "Bespoke", eyebrow: "Entirely your own", image: "/brand/everluxe-first-look.png" },
 ];
 
 const eventTypes = [
-  { name: "Weddings", image: "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1200&q=80" },
-  { name: "Engagements", image: "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?auto=format&fit=crop&w=1200&q=80" },
-  { name: "Nikah", image: "https://images.unsplash.com/photo-1520854221256-17451cc331bf?auto=format&fit=crop&w=1200&q=80" },
-  { name: "Receptions", image: "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=1200&q=80" },
-  { name: "Birthday Celebrations", image: "https://images.unsplash.com/photo-1531058020387-3be344556be6?auto=format&fit=crop&w=1200&q=80" },
-  { name: "Corporate Events", image: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80" },
+  { name: "Weddings", image: "/brand/everluxe-first-look.png" },
+  { name: "Engagements", image: "/brand/everluxe-first-look.png" },
+  { name: "Nikah", image: "/brand/everluxe-first-look.png" },
+  { name: "Receptions", image: "/brand/everluxe-first-look.png" },
+  { name: "Birthday Celebrations", image: "/brand/everluxe-first-look.png" },
+  { name: "Corporate Events", image: "/brand/everluxe-first-look.png" },
 ];
 
 const navItems = [["Our work", "work"], ["Services", "services"], ["Design styles", "styles"], ["Contact", "contact"]];
