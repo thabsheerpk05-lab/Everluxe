@@ -30,21 +30,23 @@ export function publicProfile(profile) {
   return { ...DEFAULT_BUSINESS_PROFILE, ...(profile || {}), logoUrl: profile?.logoUrl || DEFAULT_LOGO_URL };
 }
 
-export function parseDataUrl(dataUrl) {
-  const matched = /^data:(image\/(?:png|jpe?g|webp));base64,([a-z0-9+/=]+)$/i.exec(dataUrl || "");
-  if (!matched) throw new Error("Upload a PNG, JPEG, or WebP image.");
+export function parseDataUrl(dataUrl, allowVideo = false) {
+  const types = allowVideo ? "image\/(?:png|jpe?g|webp)|video\/(?:mp4|webm|quicktime)" : "image\/(?:png|jpe?g|webp)";
+  const matched = new RegExp(`^data:(${types});base64,([a-z0-9+/=]+)$`, "i").exec(dataUrl || "");
+  if (!matched) throw new Error(allowVideo ? "Upload a PNG, JPEG, WebP, MP4, WebM, or MOV file." : "Upload a PNG, JPEG, or WebP image.");
   const buffer = Buffer.from(matched[2], "base64");
-  if (!buffer.length || buffer.length > 8 * 1024 * 1024) throw new Error("Images must be between 1 byte and 8 MB.");
-  const extension = matched[1] === "image/png" ? "png" : matched[1] === "image/webp" ? "webp" : "jpg";
-  return { buffer, extension };
+  const limit = matched[1].startsWith("video/") ? 40 * 1024 * 1024 : 8 * 1024 * 1024;
+  if (!buffer.length || buffer.length > limit) throw new Error(`Files must be between 1 byte and ${matched[1].startsWith("video/") ? 40 : 8} MB.`);
+  const extension = matched[1].includes("png") ? "png" : matched[1].includes("webp") ? "webp" : matched[1].includes("mp4") ? "mp4" : matched[1].includes("webm") ? "webm" : matched[1].includes("quicktime") ? "mov" : "jpg";
+  return { buffer, extension, mimeType: matched[1] };
 }
 
-export async function storeImage(dataUrl) {
-  const { buffer, extension } = parseDataUrl(dataUrl);
+export async function storeImage(dataUrl, allowVideo = false) {
+  const { buffer, extension, mimeType } = parseDataUrl(dataUrl, allowVideo);
   if (process.env.VERCEL) {
     // Vercel function files are not durable. Keeping the validated data URL in
     // the existing database preserves uploads without introducing a new service.
-    return `data:image/${extension === "jpg" ? "jpeg" : extension};base64,${buffer.toString("base64")}`;
+    return `${mimeType};base64,${buffer.toString("base64")}`;
   }
   const directory = process.env.UPLOADS_DIR || path.resolve(process.cwd(), "uploads");
   await fs.mkdir(directory, { recursive: true });

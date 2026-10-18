@@ -119,7 +119,7 @@ router.put("/admin/settings", asyncHandler(async (req, res) => {
 }));
 
 router.post("/admin/uploads", asyncHandler(async (req, res) => {
-  const url = await storeImage(req.body?.dataUrl);
+  const url = await storeImage(req.body?.dataUrl, Boolean(req.body?.allowVideo));
   await recordActivity(prisma, req.user.id, "UPLOADED", "Image", url);
   res.status(201).json({ url });
 }));
@@ -194,8 +194,8 @@ router.put("/admin/packages/:id", asyncHandler(async (req, res) => {
 
 router.get("/admin/gallery", asyncHandler(async (_req, res) => res.json(await prisma.galleryItem.findMany({ orderBy: [{ displayOrder: "asc" }, { updatedAt: "desc" }] }))));
 router.post("/admin/gallery", asyncHandler(async (req, res) => {
-  const { title, imageUrl, caption, eventTypeId, designStyleId, displayOrder, status, featured } = req.body || {}; if (!title?.trim() || !imageUrl) return res.status(400).json({ message: "Gallery title and image are required." });
-  const item = await prisma.galleryItem.create({ data: { title: title.trim(), imageUrl, caption: caption || null, eventTypeId: eventTypeId ? Number(eventTypeId) : null, designStyleId: designStyleId ? Number(designStyleId) : null, displayOrder: Number(displayOrder || 0), status: status || "DRAFT", featured: Boolean(featured) } }); await recordActivity(prisma, req.user.id, "CREATED", "GalleryItem", item.id); res.status(201).json(item);
+  const { title, imageUrl, caption, mediaType, category, eventTypeId, designStyleId, displayOrder, status, featured } = req.body || {}; if (!title?.trim() || !imageUrl) return res.status(400).json({ message: "Gallery title and media are required." });
+  const item = await prisma.galleryItem.create({ data: { title: title.trim(), imageUrl, mediaType: mediaType || "IMAGE", category: category || "Other Events", caption: caption || null, eventTypeId: eventTypeId ? Number(eventTypeId) : null, designStyleId: designStyleId ? Number(designStyleId) : null, displayOrder: Number(displayOrder || 0), status: status || "DRAFT", featured: Boolean(featured) } }); await recordActivity(prisma, req.user.id, "CREATED", "GalleryItem", item.id); res.status(201).json(item);
 }));
 router.put("/admin/gallery/:id", asyncHandler(async (req, res) => { const id = Number(req.params.id); const data = { ...req.body }; delete data.id; delete data.createdAt; delete data.updatedAt; const item = await prisma.galleryItem.update({ where: { id }, data }); await recordActivity(prisma, req.user.id, "UPDATED", "GalleryItem", id); res.json(item); }));
 router.delete("/admin/gallery/:id", asyncHandler(async (req, res) => { const id = Number(req.params.id); const item = await prisma.galleryItem.findUnique({ where: { id } }); if (!item) return res.status(404).json({ message: "Gallery item not found." }); await prisma.galleryItem.delete({ where: { id } }); await recordActivity(prisma, req.user.id, "DELETED", "GalleryItem", id, { imageUrl: item.imageUrl }); res.status(204).send(); }));
