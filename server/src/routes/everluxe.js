@@ -75,6 +75,25 @@ router.post("/public/enquiries", asyncHandler(async (req, res) => {
   res.status(201).json(enquiry);
 }));
 
+router.use("/customer", authenticate);
+router.get("/customer/event-profiles", asyncHandler(async (req, res) => {
+  const profile = await prisma.customerProfile.findUnique({ where: { userId: req.user.id } });
+  if (!profile) return res.json([]);
+  res.json(await prisma.eventProfile.findMany({ where: { customerId: profile.id }, orderBy: { updatedAt: "desc" }, include: { eventType: true } }));
+}));
+router.post("/customer/event-profiles", asyncHandler(async (req, res) => {
+  const body = req.body || {}; if (!body.title?.trim()) return res.status(400).json({ message: "Event profile title is required." });
+  const profile = await prisma.customerProfile.upsert({ where: { userId: req.user.id }, update: {}, create: { userId: req.user.id } });
+  const item = await prisma.eventProfile.create({ data: { customerId: profile.id, title: body.title.trim(), eventTypeId: body.eventTypeId ? Number(body.eventTypeId) : null, eventDate: body.eventDate ? new Date(body.eventDate) : null, location: body.location || null, guestCount: body.guestCount ? Number(body.guestCount) : null, notes: body.notes || null }, include: { eventType: true } });
+  res.status(201).json(item);
+}));
+router.put("/customer/event-profiles/:id", asyncHandler(async (req, res) => {
+  const profile = await prisma.customerProfile.findUnique({ where: { userId: req.user.id } });
+  const id = Number(req.params.id); const owned = profile && await prisma.eventProfile.findFirst({ where: { id, customerId: profile.id } });
+  if (!owned) return res.status(404).json({ message: "Event profile not found." });
+  const body = req.body || {}; res.json(await prisma.eventProfile.update({ where: { id }, data: { title: body.title?.trim(), eventTypeId: body.eventTypeId ? Number(body.eventTypeId) : null, eventDate: body.eventDate ? new Date(body.eventDate) : null, location: body.location, guestCount: body.guestCount ? Number(body.guestCount) : null, notes: body.notes } }));
+}));
+
 router.use("/admin", authenticate, requireAdmin);
 
 router.get("/admin/dashboard", asyncHandler(async (_req, res) => {
