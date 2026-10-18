@@ -7,6 +7,7 @@ import { DEFAULT_BUSINESS_PROFILE, DEFAULT_LOGO_URL, makePublicId, publicProfile
 const router = express.Router();
 const PUBLIC_STATUSES = ["PUBLISHED"];
 const active = { status: { in: PUBLIC_STATUSES } };
+const enquiryKeys = new Map();
 
 async function getProfile() {
   const profile = await prisma.businessProfile.upsert({ where: { id: 1 }, update: {}, create: DEFAULT_BUSINESS_PROFILE });
@@ -53,10 +54,14 @@ router.get("/public/taxonomies", asyncHandler(async (_req, res) => {
 }));
 
 router.post("/public/enquiries", asyncHandler(async (req, res) => {
-  const { fullName, phone, whatsapp, eventTypeId, eventDate, eventLocation, guestCount, preferredStyle, budgetRange, message, designIds = [], packageIds = [], addonIds = [], attachments = [] } = req.body || {};
+  const idempotencyKey = String(req.headers["idempotency-key"] || "").trim();
+  if (idempotencyKey && enquiryKeys.has(idempotencyKey)) return res.status(409).json({ message: "This enquiry has already been submitted." });
+  const { fullName, phone, whatsapp, eventTypeId, eventDate, eventLocation, guestCount, preferredStyle, budgetRange, message, designIds = [], modelIds = [], packageIds = [], addonIds = [], attachments = [] } = req.body || {};
   if (!fullName?.trim() || !phone?.trim()) return res.status(400).json({ message: "Full name and phone number are required." });
+  if (String(phone).replace(/\D/g, "").length < 7) return res.status(400).json({ message: "Enter a valid phone number." });
+  const selectedDesignIds = [...new Set([...designIds, ...modelIds].map(Number).filter(Number.isInteger))];
   const [designs, packages, addons] = await Promise.all([
-    designIds.length ? prisma.catalogueDesign.findMany({ where: { id: { in: designIds.map(Number) } } }) : [],
+    selectedDesignIds.length ? prisma.catalogueDesign.findMany({ where: { id: { in: selectedDesignIds, status: "PUBLISHED" } } }) : [],
     packageIds.length ? prisma.eventPackage.findMany({ where: { id: { in: packageIds.map(Number) } } }) : [],
     addonIds.length ? prisma.approvedAddon.findMany({ where: { id: { in: addonIds.map(Number) } } }) : []
   ]);
@@ -73,6 +78,7 @@ router.post("/public/enquiries", asyncHandler(async (req, res) => {
     },
     select: { reference: true, createdAt: true }
   });
+  if (idempotencyKey) { enquiryKeys.set(idempotencyKey, enquiry.reference); setTimeout(() => enquiryKeys.delete(idempotencyKey), 30 * 60 * 1000); }
   res.status(201).json(enquiry);
 }));
 
