@@ -4,19 +4,21 @@
 |---|---|---|
 | Repository inventory and staged checklist | VERIFIED | Repository inspected; this file tracks status. |
 | Neon connection diagnosis and safe migration | IN PROGRESS | Additive migration applied; current local API restart cannot reach Neon intermittently. |
-| Database-backed enquiry submission | IN PROGRESS | Dedicated rendered form now submits models, budget, addons and validated private image attachments with idempotency protection; live DB test remains blocked by Neon sessions. |
-| Admin enquiry management | IN PROGRESS | Existing status update plus attachments/add-ons/quotation relations added; needs live authenticated test. |
-| Persistent gallery image uploads and synchronization | IN PROGRESS | Existing upload/gallery flow works locally; live verification pending. |
-| Gallery categories and video support | IN PROGRESS | `category`/`mediaType` persist; video upload validation and lightbox playback are implemented, but admin media picker still needs final UI verification. |
-| Recent Works and fullscreen/swipe viewer | IN PROGRESS | Public gallery now maps persisted categories/media and lightbox supports video plus existing swipe/navigation; refresh test awaits live API. |
-| Editable budget ranges | IN PROGRESS | Models, admin/public API routes and wired admin screen added; live workflow test pending. |
-| Admin-managed design models | IN PROGRESS | Existing catalogue CRUD and public model loading are present; final persisted selection wiring remains. |
-| Approved addons under ₹30k | IN PROGRESS | Models and admin/public API routes added; admin/customer UI still required. |
-| Secure customer reference-photo uploads | IN PROGRESS | Backend validates/stores private attachment data records; visible multi-file input and live access test remain. |
-| Quotation management and historical snapshots | IN PROGRESS | Admin quotation creation/status/history UI is wired; snapshots and revision history persist server-side; live DB test remains blocked. |
-| Secure admin password change | IN PROGRESS | Auth endpoint added; admin UI and live test still required. |
+| Database-backed enquiry submission | IMPLEMENTED · LOCALLY CHECKED | The single rendered form submits models, budget, add-ons and validated private image attachments; duplicate requests use an idempotency key. Server rejects unpublished models, unapproved add-ons and non-upload attachment URLs. Live DB workflow remains blocked by unavailable runtime. |
+| Admin enquiry management | IMPLEMENTED · CODE CHECKED | Admin-only enquiry list/status workflow includes attachments, selections and quotation relations. Authenticated live test remains blocked by unavailable runtime. |
+| Persistent gallery image uploads and synchronization | IMPLEMENTED · UNVERIFIED | Upload/gallery persistence and public refresh mapping are implemented. Development filesystem is explicitly non-durable; database/object-storage refresh could not be verified without a running API/database. |
+| Gallery administration (upload/preview/replace/publish/unpublish/delete/order) | IMPLEMENTED · CODE CHECKED | Admin UI now exposes photo/video upload, preview, category, display order, replacement, status changes and deletion; authenticated runtime verification remains blocked. |
+| Gallery categories and video support | IMPLEMENTED · LOCALLY CHECKED | `category`/`mediaType` persist; validated image/video upload and lightbox playback are implemented. Public refresh remains unverified. |
+| Recent Works and fullscreen/swipe viewer | IMPLEMENTED · LOCALLY CHECKED | Public gallery maps persisted media and the lightbox supports video, keyboard navigation and pointer swipe. |
+| Editable budget ranges | IMPLEMENTED · CODE CHECKED | Admin/public routes and admin screen are present; live persistence test is blocked. |
+| Admin-managed design models | IMPLEMENTED · CODE CHECKED | Catalogue CRUD and published-model loading/validation are present; live persistence test is blocked. |
+| Approved addons under ₹30k | IMPLEMENTED · CODE CHECKED | Admin/public routes, customer controls and server-side approval validation are present; live persistence test is blocked. |
+| Secure customer reference-photo uploads | IMPLEMENTED · CODE CHECKED | Visible multi-file input has previews/removal and client limits; server validates image data URLs, size/type and stores private attachment records. Live access test is blocked. |
+| Quotation management and historical snapshots | IMPLEMENTED · CODE CHECKED | Admin quotation creation/status/history UI is wired; snapshots and intentional revisions persist server-side. Live DB test is blocked. |
+| Secure admin password change | IMPLEMENTED · CODE CHECKED | Password-change endpoint and admin screen are present; authenticated runtime test is blocked. |
 | Customer accounts and event profiles | VERIFIED (deferred) | Customer accounts are intentionally not exposed in v1; backend event-profile structure remains available for a future customer portal. |
-| ADMIN/CUSTOMER authorization | IN PROGRESS | Admin middleware and customer-scoped event-profile routes are present; live authorization test pending. |
-| Demo cleanup and responsive integration | IN PROGRESS | Admin navigation is now wired; final responsive/demo-data review remains. |
-| Frontend/backend feature tests | IN PROGRESS | Build and Prisma validation pass; Neon-backed API test is currently blocked by connection refusal. |
+| ADMIN/CUSTOMER authorization | IMPLEMENTED · CODE CHECKED | Server middleware restricts admin APIs to ADMIN and customer event profiles to the authenticated owner; live authorization test pending. |
+| Demo cleanup and responsive integration | IMPLEMENTED · LOCALLY CHECKED | Removed the client fallback portfolio imagery and fake placeholder copy; no sample packages/videos are present in the seed file. Existing responsive styles remain in place. Database records could not be inspected; any uncertain records remain untouched and must be reviewed by an ADMIN. |
+| Frontend/backend feature tests | BLOCKED · RUNTIME ONLY | `npm run dev` started Vite successfully, but the API exited during its required database connection before port 4000 became available. Frontend admin navigation was inspected in the existing browser session; enquiry, upload, quotation, gallery-refresh, profile and authorization workflows could not be exercised. No Neon troubleshooting was attempted. |
+| Production persistent storage | BLOCKED · APPROVAL REQUIRED | Use an object-storage provider (recommended: Cloudflare R2 or Supabase Storage) for public gallery media and private attachments. Requires a bucket, credentials, server-side signed/private access configuration and user approval before any paid/hosted activation. |
 | Production deployment | NOT STARTED | Intentionally not performed; awaiting explicit approval. |

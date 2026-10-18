@@ -65,7 +65,11 @@ router.post("/public/enquiries", asyncHandler(async (req, res) => {
     packageIds.length ? prisma.eventPackage.findMany({ where: { id: { in: packageIds.map(Number) } } }) : [],
     addonIds.length ? prisma.approvedAddon.findMany({ where: { id: { in: addonIds.map(Number) } } }) : []
   ]);
-  const privateAttachments = await Promise.all((Array.isArray(attachments) ? attachments : []).slice(0, 5).map(async (item) => ({ fileUrl: item.dataUrl ? await storeImage(item.dataUrl) : item.fileUrl, originalName: item.originalName || "reference-image", mimeType: item.mimeType || "image/*", sizeBytes: Number(item.sizeBytes || 0) })));
+  if (selectedDesignIds.length !== designs.length) return res.status(400).json({ message: "One or more selected design models are no longer published." });
+  if (addonIds.length !== addons.length) return res.status(400).json({ message: "One or more selected add-ons are not approved." });
+  const requestedAttachments = Array.isArray(attachments) ? attachments.slice(0, 5) : [];
+  if (requestedAttachments.some((item) => !item?.dataUrl)) return res.status(400).json({ message: "Reference attachments must be uploaded image files." });
+  const privateAttachments = await Promise.all(requestedAttachments.map(async (item) => ({ fileUrl: await storeImage(item.dataUrl), originalName: item.originalName || "reference-image", mimeType: item.mimeType || "image/*", sizeBytes: Number(item.sizeBytes || 0) })));
   const enquiry = await prisma.eventEnquiry.create({
     data: {
       reference: makePublicId("EVQ"), fullName: fullName.trim(), phone: phone.trim(), whatsapp: whatsapp?.trim() || null,
