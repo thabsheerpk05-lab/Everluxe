@@ -147,6 +147,7 @@ h1 em, h2 em { color: var(--gold); font-style: italic; }
 .intro-grid__poster::after { background: rgba(70, 45, 18, .05); content: ''; inset: 0; pointer-events: none; position: absolute; }
 .intro-grid__poster figcaption { background: rgba(255, 252, 246, .9); bottom: 0; color: #7e5625; font-size: 9px; font-weight: 600; left: 0; letter-spacing: .16em; padding: 12px 14px; position: absolute; text-transform: uppercase; z-index: 1; }
 .intro-grid__poster figcaption span { color: var(--gold); margin-left: 8px; }
+.poster-cta { align-items: center; background: var(--ink); border: 0; bottom: 14px; color: #fffaf3; display: flex; font-size: 9px; gap: 10px; letter-spacing: .14em; padding: 11px 14px; position: absolute; right: 14px; text-transform: uppercase; z-index: 2; }
 .hero__image { filter: sepia(.2) saturate(.74) brightness(.86); }
 .hero--default { background: radial-gradient(circle at 72% 20%, rgba(230, 204, 159, .38), transparent 29%), radial-gradient(circle at 9% 92%, rgba(161,124,66,.3), transparent 31%), linear-gradient(124deg, #4b3522 0%, #705337 43%, #2e2118 100%); }
 .hero--default::before, .hero--default::after { border: 1px solid rgba(226, 199, 153, .36); border-radius: 50% 50% 0 0; content: ''; height: 98%; position: absolute; right: 9%; top: 20%; transform: rotate(16deg); width: 28%; }
