@@ -40,6 +40,9 @@ router.get("/public/gallery", asyncHandler(async (_req, res) => {
   res.json(await prisma.galleryItem.findMany({ where: active, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }] }));
 }));
 
+router.get("/public/budget-ranges", asyncHandler(async (_req, res) => res.json(await prisma.budgetRange.findMany({ where: active, orderBy: { displayOrder: "asc" } }))));
+router.get("/public/addons", asyncHandler(async (_req, res) => res.json(await prisma.approvedAddon.findMany({ where: active, orderBy: { displayOrder: "asc" } }))));
+
 router.get("/public/taxonomies", asyncHandler(async (_req, res) => {
   const [categories, styles, eventTypes] = await Promise.all([
     prisma.catalogueCategory.findMany({ where: active, orderBy: { displayOrder: "asc" } }),
@@ -50,11 +53,12 @@ router.get("/public/taxonomies", asyncHandler(async (_req, res) => {
 }));
 
 router.post("/public/enquiries", asyncHandler(async (req, res) => {
-  const { fullName, phone, whatsapp, eventTypeId, eventDate, eventLocation, guestCount, preferredStyle, budgetRange, message, designIds = [], packageIds = [] } = req.body || {};
+  const { fullName, phone, whatsapp, eventTypeId, eventDate, eventLocation, guestCount, preferredStyle, budgetRange, message, designIds = [], packageIds = [], addonIds = [], attachments = [] } = req.body || {};
   if (!fullName?.trim() || !phone?.trim()) return res.status(400).json({ message: "Full name and phone number are required." });
-  const [designs, packages] = await Promise.all([
+  const [designs, packages, addons] = await Promise.all([
     designIds.length ? prisma.catalogueDesign.findMany({ where: { id: { in: designIds.map(Number) } } }) : [],
-    packageIds.length ? prisma.eventPackage.findMany({ where: { id: { in: packageIds.map(Number) } } }) : []
+    packageIds.length ? prisma.eventPackage.findMany({ where: { id: { in: packageIds.map(Number) } } }) : [],
+    addonIds.length ? prisma.approvedAddon.findMany({ where: { id: { in: addonIds.map(Number) } } }) : []
   ]);
   const enquiry = await prisma.eventEnquiry.create({
     data: {
@@ -62,7 +66,9 @@ router.post("/public/enquiries", asyncHandler(async (req, res) => {
       eventTypeId: eventTypeId ? Number(eventTypeId) : null, eventDate: eventDate ? new Date(eventDate) : null, eventLocation: eventLocation?.trim() || null,
       guestCount: guestCount ? Number(guestCount) : null, preferredStyle: preferredStyle || null, budgetRange: budgetRange || null, message: message?.trim() || null,
       selectedDesigns: { create: designs.map((design) => ({ designId: design.id, designName: design.name, price: design.price, priceType: design.priceType, priceVisible: design.priceVisibility === "PUBLIC" })) },
-      selectedPackages: { create: packages.map((pkg) => ({ packageId: pkg.id, packageName: pkg.name, price: pkg.price, priceType: pkg.priceType, priceVisible: pkg.priceVisibility === "PUBLIC" })) }
+      selectedPackages: { create: packages.map((pkg) => ({ packageId: pkg.id, packageName: pkg.name, price: pkg.price, priceType: pkg.priceType, priceVisible: pkg.priceVisibility === "PUBLIC" })) },
+      selectedAddons: { create: addons.map((addon) => ({ addonId: addon.id, addonName: addon.name, price: addon.price })) },
+      attachments: { create: (Array.isArray(attachments) ? attachments : []).slice(0, 8).filter((item) => item?.fileUrl && item?.originalName).map((item) => ({ fileUrl: item.fileUrl, originalName: item.originalName, mimeType: item.mimeType || "application/octet-stream", sizeBytes: Number(item.sizeBytes || 0) })) }
     },
     select: { reference: true, createdAt: true }
   });
@@ -175,8 +181,19 @@ router.post("/admin/gallery", asyncHandler(async (req, res) => {
 router.put("/admin/gallery/:id", asyncHandler(async (req, res) => { const id = Number(req.params.id); const data = { ...req.body }; delete data.id; delete data.createdAt; delete data.updatedAt; const item = await prisma.galleryItem.update({ where: { id }, data }); await recordActivity(prisma, req.user.id, "UPDATED", "GalleryItem", id); res.json(item); }));
 router.delete("/admin/gallery/:id", asyncHandler(async (req, res) => { const id = Number(req.params.id); const item = await prisma.galleryItem.findUnique({ where: { id } }); if (!item) return res.status(404).json({ message: "Gallery item not found." }); await prisma.galleryItem.delete({ where: { id } }); await recordActivity(prisma, req.user.id, "DELETED", "GalleryItem", id, { imageUrl: item.imageUrl }); res.status(204).send(); }));
 
-router.get("/admin/enquiries", asyncHandler(async (_req, res) => res.json(await prisma.eventEnquiry.findMany({ orderBy: { createdAt: "desc" }, include: { eventType: true, selectedDesigns: true, selectedPackages: true, customer: { select: { id: true, name: true, email: true } } } }))));
+router.get("/admin/budget-ranges", asyncHandler(async (_req, res) => res.json(await prisma.budgetRange.findMany({ orderBy: { displayOrder: "asc" } }))));
+router.post("/admin/budget-ranges", asyncHandler(async (req, res) => { const body = req.body || {}; if (!body.label?.trim()) return res.status(400).json({ message: "Budget label is required." }); const item = await prisma.budgetRange.create({ data: { label: body.label.trim(), minAmount: body.minAmount == null || body.minAmount === "" ? null : String(body.minAmount), maxAmount: body.maxAmount == null || body.maxAmount === "" ? null : String(body.maxAmount), displayOrder: Number(body.displayOrder || 0), status: body.status || "DRAFT" } }); await recordActivity(prisma, req.user.id, "CREATED", "BudgetRange", item.id); res.status(201).json(item); }));
+router.put("/admin/budget-ranges/:id", asyncHandler(async (req, res) => { const body = req.body || {}; const item = await prisma.budgetRange.update({ where: { id: Number(req.params.id) }, data: { label: body.label?.trim(), minAmount: body.minAmount == null || body.minAmount === "" ? null : String(body.minAmount), maxAmount: body.maxAmount == null || body.maxAmount === "" ? null : String(body.maxAmount), displayOrder: body.displayOrder === undefined ? undefined : Number(body.displayOrder), status: body.status } }); await recordActivity(prisma, req.user.id, "UPDATED", "BudgetRange", item.id); res.json(item); }));
+
+router.get("/admin/addons", asyncHandler(async (_req, res) => res.json(await prisma.approvedAddon.findMany({ orderBy: { displayOrder: "asc" } }))));
+router.post("/admin/addons", asyncHandler(async (req, res) => { const body = req.body || {}; if (!body.name?.trim()) return res.status(400).json({ message: "Addon name is required." }); const item = await prisma.approvedAddon.create({ data: { name: body.name.trim(), description: body.description || null, price: body.price == null || body.price === "" ? null : String(body.price), displayOrder: Number(body.displayOrder || 0), status: body.status || "DRAFT" } }); await recordActivity(prisma, req.user.id, "CREATED", "ApprovedAddon", item.id); res.status(201).json(item); }));
+router.put("/admin/addons/:id", asyncHandler(async (req, res) => { const body = req.body || {}; const item = await prisma.approvedAddon.update({ where: { id: Number(req.params.id) }, data: { name: body.name?.trim(), description: body.description, price: body.price == null || body.price === "" ? null : String(body.price), displayOrder: body.displayOrder === undefined ? undefined : Number(body.displayOrder), status: body.status } }); await recordActivity(prisma, req.user.id, "UPDATED", "ApprovedAddon", item.id); res.json(item); }));
+
+router.get("/admin/enquiries", asyncHandler(async (_req, res) => res.json(await prisma.eventEnquiry.findMany({ orderBy: { createdAt: "desc" }, include: { eventType: true, selectedDesigns: true, selectedPackages: true, selectedAddons: true, attachments: true, quotations: true, customer: { select: { id: true, name: true, email: true } } } }))));
 router.put("/admin/enquiries/:id", asyncHandler(async (req, res) => { const enquiry = await prisma.eventEnquiry.update({ where: { id: Number(req.params.id) }, data: { status: req.body?.status, adminNotes: req.body?.adminNotes } }); await recordActivity(prisma, req.user.id, "UPDATED", "EventEnquiry", enquiry.id, { status: enquiry.status }); res.json(enquiry); }));
+router.get("/admin/quotations", asyncHandler(async (_req, res) => res.json(await prisma.quotation.findMany({ orderBy: { updatedAt: "desc" }, include: { enquiry: { select: { reference: true, fullName: true } }, history: { orderBy: { createdAt: "desc" } } } }))));
+router.post("/admin/quotations", asyncHandler(async (req, res) => { const body = req.body || {}; const enquiry = await prisma.eventEnquiry.findUnique({ where: { id: Number(body.enquiryId) }, include: { selectedDesigns: true, selectedPackages: true, selectedAddons: true } }); if (!enquiry) return res.status(404).json({ message: "Enquiry not found." }); const snapshot = JSON.stringify({ enquiryId: enquiry.id, designs: enquiry.selectedDesigns, packages: enquiry.selectedPackages, addons: enquiry.selectedAddons, lineItems: body.lineItems || [], budgetRange: enquiry.budgetRange }); const quotation = await prisma.quotation.create({ data: { reference: makePublicId("EVT"), enquiryId: enquiry.id, status: body.status || "DRAFT", subtotal: body.subtotal == null ? null : String(body.subtotal), total: body.total == null ? null : String(body.total), notes: body.notes || null, snapshot, createdById: req.user.id, updatedById: req.user.id, history: { create: { changedById: req.user.id, action: "CREATED", snapshot } } }, include: { history: true } }); await recordActivity(prisma, req.user.id, "CREATED", "Quotation", quotation.id); res.status(201).json(quotation); }));
+router.put("/admin/quotations/:id", asyncHandler(async (req, res) => { const id = Number(req.params.id); const previous = await prisma.quotation.findUnique({ where: { id } }); if (!previous) return res.status(404).json({ message: "Quotation not found." }); const body = req.body || {}; const snapshot = body.snapshot || previous.snapshot; const quotation = await prisma.quotation.update({ where: { id }, data: { status: body.status, subtotal: body.subtotal == null ? undefined : String(body.subtotal), total: body.total == null ? undefined : String(body.total), notes: body.notes, snapshot, updatedById: req.user.id, history: { create: { changedById: req.user.id, action: "UPDATED", snapshot } } }, include: { history: true } }); await recordActivity(prisma, req.user.id, "UPDATED", "Quotation", id); res.json(quotation); }));
 router.get("/admin/activity", asyncHandler(async (_req, res) => res.json(await prisma.activityLog.findMany({ take: 100, orderBy: { createdAt: "desc" }, include: { user: { select: { name: true, email: true } } } }))));
 
 export default router;

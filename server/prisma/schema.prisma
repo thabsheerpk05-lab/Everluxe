@@ -29,6 +29,9 @@ model User {
   updatedPackages EventPackage[] @relation("EventPackageUpdatedBy")
   enquiries     EventEnquiry[] @relation("CustomerEnquiries")
   activity      ActivityLog[]
+  createdQuotations Quotation[] @relation("QuotationCreatedBy")
+  updatedQuotations Quotation[] @relation("QuotationUpdatedBy")
+  quotationHistory QuotationHistory[] @relation("QuotationHistoryBy")
 }
 
 model BusinessProfile {
@@ -55,6 +58,23 @@ model CustomerProfile {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventProfiles EventProfile[]
+}
+
+model EventProfile {
+  id          Int      @id @default(autoincrement())
+  customerId  Int
+  title       String
+  eventTypeId Int?
+  eventDate   DateTime?
+  location    String?
+  guestCount  Int?
+  notes       String?  @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  customer    CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  eventType   EventType? @relation(fields: [eventTypeId], references: [id], onDelete: SetNull)
+  enquiries   EventEnquiry[]
 }
 
 model CatalogueCategory {
@@ -92,6 +112,7 @@ model EventType {
   updatedAt    DateTime @updatedAt
   designs      CatalogueDesign[]
   enquiries    EventEnquiry[]
+  eventProfiles EventProfile[]
 }
 
 model CatalogueDesign {
@@ -174,6 +195,8 @@ model GalleryItem {
   title        String
   caption      String?  @db.Text
   imageUrl     String
+  mediaType    String   @default("IMAGE")
+  category     String   @default("Other Events")
   eventTypeId  Int?
   designStyleId Int?
   displayOrder Int      @default(0)
@@ -205,6 +228,87 @@ model EventEnquiry {
   eventType      EventType? @relation(fields: [eventTypeId], references: [id], onDelete: SetNull)
   selectedDesigns EnquiryDesign[]
   selectedPackages EnquiryPackage[]
+  selectedAddons  EnquiryAddon[]
+  eventProfile   EventProfile? @relation(fields: [eventProfileId], references: [id], onDelete: SetNull)
+  eventProfileId Int?
+  attachments    EnquiryAttachment[]
+  quotations     Quotation[]
+}
+
+model EnquiryAttachment {
+  id          Int      @id @default(autoincrement())
+  enquiryId   Int
+  fileUrl     String
+  originalName String
+  mimeType    String
+  sizeBytes   Int
+  createdAt   DateTime @default(now())
+  enquiry     EventEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+}
+
+model BudgetRange {
+  id          Int      @id @default(autoincrement())
+  label       String   @unique
+  minAmount   Decimal? @db.Decimal(12, 2)
+  maxAmount   Decimal? @db.Decimal(12, 2)
+  displayOrder Int     @default(0)
+  status      String   @default("PUBLISHED")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ApprovedAddon {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?  @db.Text
+  price       Decimal? @db.Decimal(12, 2)
+  status      String   @default("DRAFT")
+  displayOrder Int     @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  enquiryItems EnquiryAddon[]
+}
+
+model EnquiryAddon {
+  id        Int @id @default(autoincrement())
+  enquiryId Int
+  addonId   Int
+  addonName String
+  price     Decimal? @db.Decimal(12, 2)
+  enquiry   EventEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  addon     ApprovedAddon @relation(fields: [addonId], references: [id], onDelete: Restrict)
+  @@unique([enquiryId, addonId])
+}
+
+model Quotation {
+  id          Int      @id @default(autoincrement())
+  reference   String   @unique
+  enquiryId   Int
+  status      String   @default("DRAFT")
+  currency    String   @default("INR")
+  subtotal    Decimal? @db.Decimal(12, 2)
+  total       Decimal? @db.Decimal(12, 2)
+  notes       String?  @db.Text
+  snapshot    String   @db.Text
+  createdById Int
+  updatedById Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  enquiry     EventEnquiry @relation(fields: [enquiryId], references: [id], onDelete: Cascade)
+  createdBy   User @relation("QuotationCreatedBy", fields: [createdById], references: [id])
+  updatedBy   User @relation("QuotationUpdatedBy", fields: [updatedById], references: [id])
+  history     QuotationHistory[]
+}
+
+model QuotationHistory {
+  id          Int      @id @default(autoincrement())
+  quotationId Int
+  changedById Int
+  action      String
+  snapshot    String   @db.Text
+  createdAt   DateTime @default(now())
+  quotation   Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  changedBy   User @relation("QuotationHistoryBy", fields: [changedById], references: [id])
 }
 
 model EnquiryDesign {

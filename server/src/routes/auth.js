@@ -57,6 +57,15 @@ router.get("/me", authenticate, asyncHandler(async (req, res) => {
   return res.json(user);
 }));
 
+router.post("/change-password", authenticate, asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword || newPassword.length < 8) return res.status(400).json({ message: "Current password and a new password of at least 8 characters are required." });
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  if (!user || !(await bcrypt.compare(currentPassword, user.password))) return res.status(401).json({ message: "Current password is incorrect." });
+  await prisma.user.update({ where: { id: user.id }, data: { password: await bcrypt.hash(newPassword, 12) } });
+  res.json({ message: "Password updated. Please sign in again." });
+}));
+
 router.post("/register", asyncHandler(async (req, res) => {
   const { name, email, password } = req.body || {};
   if (!name || !email || !password) {
