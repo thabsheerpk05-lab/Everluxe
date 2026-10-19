@@ -8,6 +8,11 @@ async function request(path, options = {}) {
   const token = localStorage.getItem("token");
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) } });
   const data = response.status === 204 ? null : await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.dispatchEvent(new Event("auth:unauthorized"));
+  }
   if (!response.ok) throw new Error(`${path} (${response.status}): ${data.message || "Request failed."}`);
   return data;
 }
@@ -65,6 +70,7 @@ export default function AdminPortal() {
   const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem("user")); } catch { return null; } });
   const [section, setSection] = useState("dashboard"); const [profile, setProfile] = useState(defaultProfile); const [dashboard, setDashboard] = useState(null); const [designs, setDesigns] = useState([]); const [taxonomies, setTaxonomies] = useState({ categories: [], styles: [], "event-types": [] }); const [enquiries, setEnquiries] = useState([]); const [open, setOpen] = useState(false); const [notice, setNotice] = useState(null);
   const notify = (message, error = false) => { setNotice({ message, error }); window.setTimeout(() => setNotice(null), 3500); };
+  useEffect(() => { const signOut = () => setUser(null); window.addEventListener("auth:unauthorized", signOut); return () => window.removeEventListener("auth:unauthorized", signOut); }, []);
   const reload = async () => { try { const [settings, stats, catalogue, categories, styles, eventTypes, enquiriesData] = await Promise.all([request("/everluxe/admin/settings"), request("/everluxe/admin/dashboard"), request("/everluxe/admin/designs"), request("/everluxe/admin/taxonomies/categories"), request("/everluxe/admin/taxonomies/styles"), request("/everluxe/admin/taxonomies/event-types"), request("/everluxe/admin/enquiries")]); setProfile(settings); setDashboard(stats); setDesigns(catalogue); setTaxonomies({ categories, styles, "event-types": eventTypes }); setEnquiries(enquiriesData); } catch (error) { notify(error.message, true); } };
   useEffect(() => { if (user?.role === "ADMIN") reload(); }, [user]);
   if (user?.role !== "ADMIN") return <Login onLogin={setUser} />;
