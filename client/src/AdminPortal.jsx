@@ -8,7 +8,7 @@ async function request(path, options = {}) {
   const token = localStorage.getItem("token");
   const response = await fetch(`${API_BASE}${path}`, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) } });
   const data = response.status === 204 ? null : await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.message || "Request failed.");
+  if (!response.ok) throw new Error(`${path} (${response.status}): ${data.message || "Request failed."}`);
   return data;
 }
 
@@ -38,7 +38,7 @@ function Dashboard({ data }) { const count = (groups, name) => groups?.find((gro
 
 function Catalogue({ designs, reload, notify }) {
   const [name, setName] = useState(""); const [packages, setPackages] = useState([]); const [gallery, setGallery] = useState([]); const [packageName, setPackageName] = useState(""); const [galleryTitle, setGalleryTitle] = useState(""); const [galleryImage, setGalleryImage] = useState(""); const [galleryMediaType, setGalleryMediaType] = useState("IMAGE"); const [galleryCategory, setGalleryCategory] = useState("Other Events"); const [galleryOrder, setGalleryOrder] = useState("0");
-  const loadExtras = async () => { try { const [packageData, galleryData] = await Promise.all([request("/everluxe/admin/packages"), request("/everluxe/admin/gallery")]); setPackages(packageData); setGallery(galleryData); } catch (error) { notify(error.message, true); } };
+  const loadExtras = async () => { const [packageResult, galleryResult] = await Promise.allSettled([request("/everluxe/admin/packages"), request("/everluxe/admin/gallery")]); if (packageResult.status === "fulfilled") setPackages(packageResult.value); else notify(packageResult.reason?.message || "Unable to load packages.", true); if (galleryResult.status === "fulfilled") setGallery(galleryResult.value); else notify(galleryResult.reason?.message || "Unable to load gallery.", true); };
   useEffect(() => { loadExtras(); }, []);
   const create = async (event) => { event.preventDefault(); if (!name.trim()) return; try { await request("/everluxe/admin/designs", { method: "POST", body: JSON.stringify({ name, status: "DRAFT" }) }); setName(""); await reload(); notify("Draft design created."); } catch (error) { notify(error.message, true); } };
   const setDesignStatus = async (id, status) => { try { await request(`/everluxe/admin/designs/${id}`, { method: "PUT", body: JSON.stringify({ status }) }); await reload(); notify("Design status updated."); } catch (error) { notify(error.message, true); } };
