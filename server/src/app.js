@@ -8,6 +8,7 @@ import userRoutes from "./routes/users.js";
 import everluxeRoutes from "./routes/everluxe.js";
 import prisma from "./lib/prisma.js";
 import { asyncHandler } from "./utils/asyncHandler.js";
+import { logApiError } from "./utils/errorHandling.js";
 
 const app = express();
 const configuredOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
@@ -44,9 +45,12 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/everluxe", everluxeRoutes);
 
-app.use((err, _req, res, _next) => {
-  console.error(err);
-  res.status(500).json({ message: "Internal server error" });
+app.use((err, req, res, _next) => {
+  const details = logApiError(err, req);
+  res.status(details.status).json({
+    message: details.message,
+    errorType: details.category
+  });
 });
 
 export default app;

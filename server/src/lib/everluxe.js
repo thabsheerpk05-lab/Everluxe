@@ -33,26 +33,38 @@ export function publicProfile(profile) {
 export function parseDataUrl(dataUrl, allowVideo = false) {
   const types = allowVideo ? "image\/(?:png|jpe?g|webp)|video\/(?:mp4|webm|quicktime)" : "image\/(?:png|jpe?g|webp)";
   const matched = new RegExp(`^data:(${types});base64,([a-z0-9+/=]+)$`, "i").exec(dataUrl || "");
-  if (!matched) throw new Error(allowVideo ? "Upload a PNG, JPEG, WebP, MP4, WebM, or MOV file." : "Upload a PNG, JPEG, or WebP image.");
-  const buffer = Buffer.from(matched[2], "base64");
-  const limit = matched[1].startsWith("video/") ? 40 * 1024 * 1024 : 8 * 1024 * 1024;
-  if (!buffer.length || buffer.length > limit) throw new Error(`Files must be between 1 byte and ${matched[1].startsWith("video/") ? 40 : 8} MB.`);
-  const extension = matched[1].includes("png") ? "png" : matched[1].includes("webp") ? "webp" : matched[1].includes("mp4") ? "mp4" : matched[1].includes("webm") ? "webm" : matched[1].includes("quicktime") ? "mov" : "jpg";
-  return { buffer, extension, mimeType: matched[1] };
+  if (!matched) { const error = new Error(allowVideo ? "Upload a PNG, JPEG, WebP, MP4, WebM, or MOV file." : "Upload a PNG, JPEG, or WebP image."); error.statusCode = 400; throw error; }
+  return parseBuffer(Buffer.from(matched[2], "base64"), matched[1], allowVideo);
 }
 
-export async function storeImage(dataUrl, allowVideo = false) {
-  const { buffer, extension, mimeType } = parseDataUrl(dataUrl, allowVideo);
-  if (process.env.VERCEL) {
-    // Vercel function files are not durable. Keeping the validated data URL in
-    // the existing database preserves uploads without introducing a new service.
-    return `${mimeType};base64,${buffer.toString("base64")}`;
+export function parseBuffer(buffer, mimeType, allowVideo = false) {
+  const normalizedType = String(mimeType || "").split(";", 1)[0].toLowerCase();
+  const imageTypes = new Set(["image/png", "image/jpeg", "image/webp"]);
+  const videoTypes = new Set(["video/mp4", "video/webm", "video/quicktime"]);
+  const valid = imageTypes.has(normalizedType) || (allowVideo && videoTypes.has(normalizedType));
+  if (!valid) { const error = new Error(allowVideo ? "Upload a PNG, JPEG, WebP, MP4, WebM, or MOV file." : "Upload a PNG, JPEG, or WebP image."); error.statusCode = 400; throw error; }
+  const isVideo = videoTypes.has(normalizedType);
+  const limit = isVideo ? 40 * 1024 * 1024 : 8 * 1024 * 1024;
+  if (!Buffer.isBuffer(buffer) || !buffer.length || buffer.length > limit) { const error = new Error(`Files must be between 1 byte and ${isVideo ? 40 : 8} MB.`); error.statusCode = 400; throw error; }
+  const extension = normalizedType === "image/png" ? "png" : normalizedType === "image/webp" ? "webp" : normalizedType === "video/mp4" ? "mp4" : normalizedType === "video/webm" ? "webm" : normalizedType === "video/quicktime" ? "mov" : "jpg";
+  return { buffer, extension, mimeType: normalizedType };
+}
+
+export async function storeBuffer(buffer, mimeType, allowVideo = false) {
+  const { extension } = parseBuffer(buffer, mimeType, allowVideo);
+  if (process.env.VERCEL || process.env.MEDIA_STORAGE_PROVIDER === "object") {
+    const error = new Error("Persistent media storage is not configured for this environment."); error.statusCode = 503; throw error;
   }
   const directory = process.env.UPLOADS_DIR || path.resolve(process.cwd(), "uploads");
   await fs.mkdir(directory, { recursive: true });
   const filename = `${crypto.randomUUID()}.${extension}`;
   await fs.writeFile(path.join(directory, filename), buffer, { flag: "wx" });
   return `/uploads/${filename}`;
+}
+
+export async function storeImage(dataUrl, allowVideo = false) {
+  const { buffer, mimeType } = parseDataUrl(dataUrl, allowVideo);
+  return storeBuffer(buffer, mimeType, allowVideo);
 }
 
 export async function recordActivity(prisma, userId, action, entityType, entityId, metadata = null) {

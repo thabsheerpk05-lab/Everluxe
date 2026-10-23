@@ -1,0 +1,1 @@
+ALTER TABLE "ApprovedAddon" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT;

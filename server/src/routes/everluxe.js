@@ -2,11 +2,12 @@ import express from "express";
 import prisma from "../lib/prisma.js";
 import { authenticate, requireAdmin } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
-import { DEFAULT_BUSINESS_PROFILE, DEFAULT_LOGO_URL, makePublicId, publicProfile, recordActivity, slugify, storeImage } from "../lib/everluxe.js";
+import { DEFAULT_BUSINESS_PROFILE, DEFAULT_LOGO_URL, makePublicId, publicProfile, recordActivity, slugify, storeBuffer, storeImage } from "../lib/everluxe.js";
+import { publishedWhere } from "../utils/publicContent.js";
+import { allSelectionsPublished, normalizeSelectionIds } from "../utils/enquirySelection.js";
 
 const router = express.Router();
-const PUBLIC_STATUSES = ["PUBLISHED"];
-const active = { status: { in: PUBLIC_STATUSES } };
+const active = publishedWhere();
 const enquiryKeys = new Map();
 
 async function getProfile() {
@@ -34,19 +35,27 @@ router.get("/public/catalogue", asyncHandler(async (req, res) => {
 
 router.get("/public/packages", asyncHandler(async (req, res) => {
   const where = { ...active, availability: "AVAILABLE" }; if (req.query.featured === "true") where.featured = true;
-  res.json(await prisma.eventPackage.findMany({ where, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }], include: { items: { include: { design: { include: { images: { orderBy: [{ isCover: "desc" }, { sortOrder: "asc" }] } } } } } } }));
+  res.json(await prisma.eventPackage.findMany({ where, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }], include: { items: { where: { design: { status: "PUBLISHED", availability: "AVAILABLE" } }, include: { design: { include: { images: { orderBy: [{ isCover: "desc" }, { sortOrder: "asc" }] } } } } } } }));
 }));
 
 router.get("/public/gallery", asyncHandler(async (_req, res) => {
   res.json(await prisma.galleryItem.findMany({ where: active, orderBy: [{ displayOrder: "asc" }, { createdAt: "desc" }] }));
 }));
 
-router.get("/public/budget-ranges", asyncHandler(async (_req, res) => res.json(await prisma.budgetRange.findMany({ where: active, orderBy: { displayOrder: "asc" } }))));
+router.get("/public/budget-ranges", asyncHandler(async (_req, res) => res.json(await prisma.budgetRange.findMany({ where: active, include: { style: true }, orderBy: { displayOrder: "asc" } }))));
 router.get("/public/addons", asyncHandler(async (_req, res) => res.json(await prisma.approvedAddon.findMany({ where: active, orderBy: { displayOrder: "asc" } }))));
 
 router.get("/public/taxonomies", asyncHandler(async (_req, res) => {
-  const [categories, styles, eventTypes] = await Promise.all([
-    prisma.catalogueCategory.findMany({ where: active, orderBy: { displayOrder: "asc" } }),
+  let categories;
+  try {
+    categories = await prisma.$queryRaw`SELECT "id", "name", "slug", "imageUrl", "displayOrder", "status", "createdAt", "updatedAt" FROM "CatalogueCategory" WHERE "status" = 'PUBLISHED' ORDER BY "displayOrder" ASC`;
+  } catch (error) {
+    // Older development databases may not have the optional cover column yet.
+    // Keep the public taxonomy usable until its non-destructive migration runs.
+    if (error?.code !== "P2010") throw error;
+    categories = await prisma.catalogueCategory.findMany({ where: active, orderBy: { displayOrder: "asc" } });
+  }
+  const [styles, eventTypes] = await Promise.all([
     prisma.designStyle.findMany({ where: active, orderBy: { displayOrder: "asc" } }),
     prisma.eventType.findMany({ where: active, orderBy: { displayOrder: "asc" } })
   ]);
@@ -59,13 +68,13 @@ router.post("/public/enquiries", asyncHandler(async (req, res) => {
   const { fullName, phone, whatsapp, eventTypeId, eventDate, eventLocation, guestCount, preferredStyle, budgetRange, message, designIds = [], modelIds = [], packageIds = [], addonIds = [], attachments = [] } = req.body || {};
   if (!fullName?.trim() || !phone?.trim()) return res.status(400).json({ message: "Full name and phone number are required." });
   if (String(phone).replace(/\D/g, "").length < 7) return res.status(400).json({ message: "Enter a valid phone number." });
-  const selectedDesignIds = [...new Set([...designIds, ...modelIds].map(Number).filter(Number.isInteger))];
+  const selectedDesignIds = normalizeSelectionIds(designIds, modelIds);
   const [designs, packages, addons] = await Promise.all([
-    selectedDesignIds.length ? prisma.catalogueDesign.findMany({ where: { id: { in: selectedDesignIds, status: "PUBLISHED" } } }) : [],
+    selectedDesignIds.length ? prisma.catalogueDesign.findMany({ where: { id: { in: selectedDesignIds, status: "PUBLISHED", availability: "AVAILABLE" } } }) : [],
     packageIds.length ? prisma.eventPackage.findMany({ where: { id: { in: packageIds.map(Number) } } }) : [],
     addonIds.length ? prisma.approvedAddon.findMany({ where: { id: { in: addonIds.map(Number) } } }) : []
   ]);
-  if (selectedDesignIds.length !== designs.length) return res.status(400).json({ message: "One or more selected design models are no longer published." });
+  if (!allSelectionsPublished(selectedDesignIds, designs)) return res.status(400).json({ message: "One or more selected design models are no longer published or available." });
   if (addonIds.length !== addons.length) return res.status(400).json({ message: "One or more selected add-ons are not approved." });
   const requestedAttachments = Array.isArray(attachments) ? attachments.slice(0, 5) : [];
   if (requestedAttachments.some((item) => !item?.dataUrl)) return res.status(400).json({ message: "Reference attachments must be uploaded image files." });
@@ -129,8 +138,11 @@ router.put("/admin/settings", asyncHandler(async (req, res) => {
   res.json(publicProfile(profile));
 }));
 
-router.post("/admin/uploads", asyncHandler(async (req, res) => {
-  const url = await storeImage(req.body?.dataUrl, Boolean(req.body?.allowVideo));
+router.post("/admin/uploads", express.raw({ type: ["image/*", "video/*", "application/octet-stream"], limit: "42mb" }), asyncHandler(async (req, res) => {
+  const allowVideo = req.get("X-Allow-Video") === "true";
+  const url = Buffer.isBuffer(req.body)
+    ? await storeBuffer(req.body, req.get("Content-Type"), allowVideo)
+    : await storeImage(req.body?.dataUrl, Boolean(req.body?.allowVideo));
   await recordActivity(prisma, req.user.id, "UPLOADED", "Image", url);
   res.status(201).json({ url });
 }));
@@ -149,21 +161,55 @@ const taxonomyConfig = {
 
 router.get("/admin/taxonomies/:kind", asyncHandler(async (req, res) => {
   const config = taxonomyConfig[req.params.kind]; if (!config) return res.status(404).json({ message: "Unknown taxonomy." });
+  if (config.model === "catalogueCategory") {
+    try {
+      return res.json(await prisma.$queryRaw`SELECT "id", "name", "slug", "imageUrl", "displayOrder", "status", "createdAt", "updatedAt" FROM "CatalogueCategory" ORDER BY "displayOrder" ASC, "name" ASC`);
+    } catch (error) {
+      if (error?.code !== "P2010") throw error;
+      return res.json(await prisma.catalogueCategory.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }));
+    }
+  }
   res.json(await prisma[config.model].findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }));
 }));
 router.post("/admin/taxonomies/:kind", asyncHandler(async (req, res) => {
   const config = taxonomyConfig[req.params.kind]; if (!config) return res.status(404).json({ message: "Unknown taxonomy." });
   const name = req.body?.name?.trim(); const slug = uniqueSlug(name, config.label);
-  const extras = config.model === "designStyle" ? { description: req.body?.description || null, imageUrl: req.body?.imageUrl || null } : config.model === "eventType" ? { imageUrl: req.body?.imageUrl || null } : {};
+  const extras = config.model === "designStyle" ? { description: req.body?.description || null, imageUrl: req.body?.imageUrl || null } : config.model === "eventType" || config.model === "catalogueCategory" ? { imageUrl: req.body?.imageUrl || null } : {};
   const item = await prisma[config.model].create({ data: { name, slug, ...extras, displayOrder: Number(req.body?.displayOrder || 0), status: req.body?.status || "DRAFT" } });
   await recordActivity(prisma, req.user.id, "CREATED", config.label, item.id, { name }); res.status(201).json(item);
 }));
 router.put("/admin/taxonomies/:kind/:id", asyncHandler(async (req, res) => {
   const config = taxonomyConfig[req.params.kind]; if (!config) return res.status(404).json({ message: "Unknown taxonomy." });
   const id = Number(req.params.id); const name = req.body?.name?.trim();
-  const allowed = config.model === "designStyle" ? ["name", "description", "imageUrl", "displayOrder", "status"] : config.model === "eventType" ? ["name", "imageUrl", "displayOrder", "status"] : ["name", "displayOrder", "status"];
+  const allowed = config.model === "designStyle" ? ["name", "description", "imageUrl", "displayOrder", "status"] : config.model === "eventType" || config.model === "catalogueCategory" ? ["name", "imageUrl", "displayOrder", "status"] : ["name", "displayOrder", "status"];
   const data = Object.fromEntries(allowed.filter((key) => key in (req.body || {})).map((key) => [key, req.body[key]])); if (name) Object.assign(data, { name, slug: uniqueSlug(name, config.label) });
+  // Keep category cover updates compatible with an API process that was started
+  // before the taxonomy cover migration regenerated its Prisma client.
+  if (config.model === "catalogueCategory" && Object.keys(data).length === 1 && Object.prototype.hasOwnProperty.call(data, "imageUrl")) {
+    const imageUrl = data.imageUrl ? String(data.imageUrl) : null;
+    let rows;
+    try {
+      await prisma.$executeRaw`UPDATE "CatalogueCategory" SET "imageUrl" = ${imageUrl}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ${id}`;
+      rows = await prisma.$queryRaw`SELECT "id", "name", "slug", "imageUrl", "displayOrder", "status", "createdAt", "updatedAt" FROM "CatalogueCategory" WHERE "id" = ${id}`;
+    } catch (error) {
+      if (error?.code === "P2010") return res.status(409).json({ message: "Apply the taxonomy cover-image migration to this development database before adding covers." });
+      throw error;
+    }
+    if (!rows.length) return res.status(404).json({ message: "Taxonomy item not found." });
+    await recordActivity(prisma, req.user.id, "UPDATED", config.label, id, { imageUrl: Boolean(imageUrl) });
+    return res.json(rows[0]);
+  }
   const item = await prisma[config.model].update({ where: { id }, data }); await recordActivity(prisma, req.user.id, "UPDATED", config.label, id); res.json(item);
+}));
+router.delete("/admin/taxonomies/:kind/:id", asyncHandler(async (req, res) => {
+  const config = taxonomyConfig[req.params.kind]; if (!config) return res.status(404).json({ message: "Unknown taxonomy." });
+  const id = Number(req.params.id);
+  try { await prisma[config.model].delete({ where: { id } }); } catch (error) {
+    if (error?.code === "P2003") return res.status(409).json({ message: `This ${config.label.toLowerCase()} is referenced by catalogue or event data and cannot be deleted. Archive it instead.` });
+    throw error;
+  }
+  await recordActivity(prisma, req.user.id, "DELETED", config.label, id);
+  res.status(204).send();
 }));
 
 router.get("/admin/designs", asyncHandler(async (_req, res) => res.json(await prisma.catalogueDesign.findMany({ orderBy: [{ displayOrder: "asc" }, { updatedAt: "desc" }], include: { category: true, eventType: true, designStyle: true, images: { orderBy: [{ isCover: "desc" }, { sortOrder: "asc" }] } } }))));
@@ -177,6 +223,11 @@ router.put("/admin/designs/:id", asyncHandler(async (req, res) => {
   const data = Object.fromEntries(allowed.filter((key) => key in body).map((key) => [key, ["categoryId", "eventTypeId", "designStyleId", "displayOrder"].includes(key) && body[key] !== null ? Number(body[key]) : key === "price" && body[key] !== null && body[key] !== "" ? String(body[key]) : body[key]])); data.updatedById = req.user.id;
   if (data.name) data.slug = `${uniqueSlug(data.name, "Design")}-${id}`;
   const design = await prisma.catalogueDesign.update({ where: { id }, data }); await recordActivity(prisma, req.user.id, "UPDATED", "CatalogueDesign", id); res.json(design);
+}));
+router.delete("/admin/designs/:id", asyncHandler(async (req, res) => {
+  const id = Number(req.params.id); const design = await prisma.catalogueDesign.findUnique({ where: { id } }); if (!design) return res.status(404).json({ message: "Design not found." });
+  try { await prisma.catalogueDesign.delete({ where: { id } }); } catch (error) { if (error?.code === "P2003") return res.status(409).json({ message: "This design is referenced by an enquiry or package and cannot be deleted. Archive it instead." }); throw error; }
+  await recordActivity(prisma, req.user.id, "DELETED", "CatalogueDesign", id, { name: design.name }); res.status(204).send();
 }));
 router.post("/admin/designs/:id/images", asyncHandler(async (req, res) => {
   const designId = Number(req.params.id); const url = req.body?.url; if (!url) return res.status(400).json({ message: "Image URL is required." });
@@ -202,6 +253,11 @@ router.put("/admin/packages/:id", asyncHandler(async (req, res) => {
   if (Array.isArray(body.designIds)) data.items = { deleteMany: {}, create: body.designIds.map((designId, sortOrder) => ({ designId: Number(designId), sortOrder })) };
   const pkg = await prisma.eventPackage.update({ where: { id }, data }); await recordActivity(prisma, req.user.id, "UPDATED", "EventPackage", id); res.json(pkg);
 }));
+router.delete("/admin/packages/:id", asyncHandler(async (req, res) => {
+  const id = Number(req.params.id); const pkg = await prisma.eventPackage.findUnique({ where: { id } }); if (!pkg) return res.status(404).json({ message: "Package not found." });
+  try { await prisma.eventPackage.delete({ where: { id } }); } catch (error) { if (error?.code === "P2003") return res.status(409).json({ message: "This package is referenced by an enquiry and cannot be deleted. Archive it instead." }); throw error; }
+  await recordActivity(prisma, req.user.id, "DELETED", "EventPackage", id, { name: pkg.name }); res.status(204).send();
+}));
 
 router.get("/admin/gallery", asyncHandler(async (_req, res) => res.json(await prisma.galleryItem.findMany({ orderBy: [{ displayOrder: "asc" }, { updatedAt: "desc" }] }))));
 router.post("/admin/gallery", asyncHandler(async (req, res) => {
@@ -211,13 +267,15 @@ router.post("/admin/gallery", asyncHandler(async (req, res) => {
 router.put("/admin/gallery/:id", asyncHandler(async (req, res) => { const id = Number(req.params.id); const data = { ...req.body }; delete data.id; delete data.createdAt; delete data.updatedAt; const item = await prisma.galleryItem.update({ where: { id }, data }); await recordActivity(prisma, req.user.id, "UPDATED", "GalleryItem", id); res.json(item); }));
 router.delete("/admin/gallery/:id", asyncHandler(async (req, res) => { const id = Number(req.params.id); const item = await prisma.galleryItem.findUnique({ where: { id } }); if (!item) return res.status(404).json({ message: "Gallery item not found." }); await prisma.galleryItem.delete({ where: { id } }); await recordActivity(prisma, req.user.id, "DELETED", "GalleryItem", id, { imageUrl: item.imageUrl }); res.status(204).send(); }));
 
-router.get("/admin/budget-ranges", asyncHandler(async (_req, res) => res.json(await prisma.budgetRange.findMany({ orderBy: { displayOrder: "asc" } }))));
-router.post("/admin/budget-ranges", asyncHandler(async (req, res) => { const body = req.body || {}; if (!body.label?.trim()) return res.status(400).json({ message: "Budget label is required." }); const item = await prisma.budgetRange.create({ data: { label: body.label.trim(), minAmount: body.minAmount == null || body.minAmount === "" ? null : String(body.minAmount), maxAmount: body.maxAmount == null || body.maxAmount === "" ? null : String(body.maxAmount), displayOrder: Number(body.displayOrder || 0), status: body.status || "DRAFT" } }); await recordActivity(prisma, req.user.id, "CREATED", "BudgetRange", item.id); res.status(201).json(item); }));
-router.put("/admin/budget-ranges/:id", asyncHandler(async (req, res) => { const body = req.body || {}; const item = await prisma.budgetRange.update({ where: { id: Number(req.params.id) }, data: { label: body.label?.trim(), minAmount: body.minAmount == null || body.minAmount === "" ? null : String(body.minAmount), maxAmount: body.maxAmount == null || body.maxAmount === "" ? null : String(body.maxAmount), displayOrder: body.displayOrder === undefined ? undefined : Number(body.displayOrder), status: body.status } }); await recordActivity(prisma, req.user.id, "UPDATED", "BudgetRange", item.id); res.json(item); }));
+router.get("/admin/budget-ranges", asyncHandler(async (_req, res) => res.json(await prisma.budgetRange.findMany({ include: { style: true }, orderBy: { displayOrder: "asc" } }))));
+router.post("/admin/budget-ranges", asyncHandler(async (req, res) => { const body = req.body || {}; if (!body.label?.trim()) return res.status(400).json({ message: "Budget label is required." }); const item = await prisma.budgetRange.create({ data: { label: body.label.trim(), minAmount: body.minAmount == null || body.minAmount === "" ? null : String(body.minAmount), maxAmount: body.maxAmount == null || body.maxAmount === "" ? null : String(body.maxAmount), displayOrder: Number(body.displayOrder || 0), status: body.status || "DRAFT", styleId: body.styleId == null || body.styleId === "" ? null : Number(body.styleId) } }); await recordActivity(prisma, req.user.id, "CREATED", "BudgetRange", item.id); res.status(201).json(item); }));
+router.put("/admin/budget-ranges/:id", asyncHandler(async (req, res) => { const body = req.body || {}; const item = await prisma.budgetRange.update({ where: { id: Number(req.params.id) }, data: { label: body.label?.trim(), minAmount: body.minAmount == null || body.minAmount === "" ? null : String(body.minAmount), maxAmount: body.maxAmount == null || body.maxAmount === "" ? null : String(body.maxAmount), displayOrder: body.displayOrder === undefined ? undefined : Number(body.displayOrder), status: body.status, styleId: body.styleId === undefined ? undefined : (body.styleId == null || body.styleId === "" ? null : Number(body.styleId)) } }); await recordActivity(prisma, req.user.id, "UPDATED", "BudgetRange", item.id); res.json(item); }));
+router.delete("/admin/budget-ranges/:id", asyncHandler(async (req, res) => { const id = Number(req.params.id); const item = await prisma.budgetRange.findUnique({ where: { id } }); if (!item) return res.status(404).json({ message: "Budget range not found." }); await prisma.budgetRange.delete({ where: { id } }); await recordActivity(prisma, req.user.id, "DELETED", "BudgetRange", id, { label: item.label }); res.status(204).send(); }));
 
 router.get("/admin/addons", asyncHandler(async (_req, res) => res.json(await prisma.approvedAddon.findMany({ orderBy: { displayOrder: "asc" } }))));
-router.post("/admin/addons", asyncHandler(async (req, res) => { const body = req.body || {}; if (!body.name?.trim()) return res.status(400).json({ message: "Addon name is required." }); const item = await prisma.approvedAddon.create({ data: { name: body.name.trim(), description: body.description || null, price: body.price == null || body.price === "" ? null : String(body.price), displayOrder: Number(body.displayOrder || 0), status: body.status || "DRAFT" } }); await recordActivity(prisma, req.user.id, "CREATED", "ApprovedAddon", item.id); res.status(201).json(item); }));
-router.put("/admin/addons/:id", asyncHandler(async (req, res) => { const body = req.body || {}; const item = await prisma.approvedAddon.update({ where: { id: Number(req.params.id) }, data: { name: body.name?.trim(), description: body.description, price: body.price == null || body.price === "" ? null : String(body.price), displayOrder: body.displayOrder === undefined ? undefined : Number(body.displayOrder), status: body.status } }); await recordActivity(prisma, req.user.id, "UPDATED", "ApprovedAddon", item.id); res.json(item); }));
+router.post("/admin/addons", asyncHandler(async (req, res) => { const body = req.body || {}; if (!body.name?.trim()) return res.status(400).json({ message: "Addon name is required." }); const item = await prisma.approvedAddon.create({ data: { name: body.name.trim(), description: body.description || null, imageUrl: body.imageUrl || null, price: body.price == null || body.price === "" ? null : String(body.price), displayOrder: Number(body.displayOrder || 0), status: body.status || "DRAFT" } }); await recordActivity(prisma, req.user.id, "CREATED", "ApprovedAddon", item.id); res.status(201).json(item); }));
+router.put("/admin/addons/:id", asyncHandler(async (req, res) => { const body = req.body || {}; const item = await prisma.approvedAddon.update({ where: { id: Number(req.params.id) }, data: { name: body.name?.trim(), description: body.description, imageUrl: body.imageUrl, price: body.price == null || body.price === "" ? null : String(body.price), displayOrder: body.displayOrder === undefined ? undefined : Number(body.displayOrder), status: body.status } }); await recordActivity(prisma, req.user.id, "UPDATED", "ApprovedAddon", item.id); res.json(item); }));
+router.delete("/admin/addons/:id", asyncHandler(async (req, res) => { const id = Number(req.params.id); const item = await prisma.approvedAddon.findUnique({ where: { id } }); if (!item) return res.status(404).json({ message: "Add-on not found." }); try { await prisma.approvedAddon.delete({ where: { id } }); } catch (error) { if (error?.code === "P2003") return res.status(409).json({ message: "This add-on is referenced by an enquiry and cannot be deleted. Archive it instead." }); throw error; } await recordActivity(prisma, req.user.id, "DELETED", "ApprovedAddon", id, { name: item.name }); res.status(204).send(); }));
 
 router.get("/admin/enquiries", asyncHandler(async (_req, res) => res.json(await prisma.eventEnquiry.findMany({ orderBy: { createdAt: "desc" }, include: { eventType: true, selectedDesigns: true, selectedPackages: true, selectedAddons: true, attachments: true, quotations: true, customer: { select: { id: true, name: true, email: true } } } }))));
 router.put("/admin/enquiries/:id", asyncHandler(async (req, res) => { const enquiry = await prisma.eventEnquiry.update({ where: { id: Number(req.params.id) }, data: { status: req.body?.status, adminNotes: req.body?.adminNotes } }); await recordActivity(prisma, req.user.id, "UPDATED", "EventEnquiry", enquiry.id, { status: enquiry.status }); res.json(enquiry); }));

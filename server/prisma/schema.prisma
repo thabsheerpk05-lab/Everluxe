@@ -81,6 +81,7 @@ model CatalogueCategory {
   id           Int      @id @default(autoincrement())
   name         String   @unique
   slug         String   @unique
+  imageUrl     String?
   displayOrder Int      @default(0)
   status       String   @default("PUBLISHED")
   createdAt    DateTime @default(now())
@@ -99,6 +100,7 @@ model DesignStyle {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   designs      CatalogueDesign[]
+  budgetRanges BudgetRange[]
 }
 
 model EventType {
@@ -253,14 +255,17 @@ model BudgetRange {
   maxAmount   Decimal? @db.Decimal(12, 2)
   displayOrder Int     @default(0)
   status      String   @default("PUBLISHED")
+  styleId     Int?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  style       DesignStyle? @relation(fields: [styleId], references: [id], onDelete: SetNull)
 }
 
 model ApprovedAddon {
   id          Int      @id @default(autoincrement())
   name        String
   description String?  @db.Text
+  imageUrl    String?
   price       Decimal? @db.Decimal(12, 2)
   status      String   @default("DRAFT")
   displayOrder Int     @default(0)
