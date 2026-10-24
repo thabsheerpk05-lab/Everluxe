@@ -1,6 +1,9 @@
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
+import { fileURLToPath } from "url";
+
+export const LOCAL_UPLOADS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../uploads");
 
 export const DEFAULT_LOGO_URL = "/brand/everluxe-logo.png";
 export const DEFAULT_BUSINESS_PROFILE = {
@@ -55,7 +58,7 @@ export async function storeBuffer(buffer, mimeType, allowVideo = false) {
   if (process.env.VERCEL || process.env.MEDIA_STORAGE_PROVIDER === "object") {
     const error = new Error("Persistent media storage is not configured for this environment."); error.statusCode = 503; throw error;
   }
-  const directory = process.env.UPLOADS_DIR || path.resolve(process.cwd(), "uploads");
+  const directory = process.env.UPLOADS_DIR || LOCAL_UPLOADS_DIR;
   await fs.mkdir(directory, { recursive: true });
   const filename = `${crypto.randomUUID()}.${extension}`;
   await fs.writeFile(path.join(directory, filename), buffer, { flag: "wx" });

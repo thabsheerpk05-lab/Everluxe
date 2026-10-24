@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
-import path from "path";
 
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
@@ -9,6 +8,7 @@ import everluxeRoutes from "./routes/everluxe.js";
 import prisma from "./lib/prisma.js";
 import { asyncHandler } from "./utils/asyncHandler.js";
 import { logApiError } from "./utils/errorHandling.js";
+import { LOCAL_UPLOADS_DIR } from "./lib/everluxe.js";
 
 const app = express();
 const configuredOrigins = (process.env.CLIENT_ORIGIN || "http://localhost:5173")
@@ -31,7 +31,7 @@ app.use(
 );
 app.use(express.json({ limit: "12mb" }));
 app.use(morgan("dev"));
-app.use("/uploads", express.static(process.env.UPLOADS_DIR || path.resolve(process.cwd(), "uploads")));
+app.use("/uploads", express.static(process.env.UPLOADS_DIR || LOCAL_UPLOADS_DIR));
 
 app.get("/", (_req, res) => {
   res.json({ status: "Everluxe Events API running" });
