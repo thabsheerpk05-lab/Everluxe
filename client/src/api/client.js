@@ -1,4 +1,5 @@
-export const API_BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/$/, "");
+const configuredApiBase = import.meta.env.VITE_API_BASE || (import.meta.env.PROD ? "https://everluxe-ca7m.onrender.com/api" : "/api");
+export const API_BASE = configuredApiBase.replace(/\/$/, "");
 // Uploaded media is served by the API host, not by the static Vercel site.
 // Set VITE_MEDIA_BASE in deployments; absolute API bases are also supported.
 export const MEDIA_BASE = (import.meta.env.VITE_MEDIA_BASE || (API_BASE.startsWith("http") ? API_BASE.replace(/\/api$/, "") : "")).replace(/\/$/, "");
