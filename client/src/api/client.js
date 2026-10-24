@@ -1,9 +1,11 @@
 export const API_BASE = (import.meta.env.VITE_API_BASE || "/api").replace(/\/$/, "");
+// Uploaded media is served by the API host, not by the static Vercel site.
+// Set VITE_MEDIA_BASE in deployments; absolute API bases are also supported.
+export const MEDIA_BASE = (import.meta.env.VITE_MEDIA_BASE || (API_BASE.startsWith("http") ? API_BASE.replace(/\/api$/, "") : "")).replace(/\/$/, "");
 
 export function assetUrl(url) {
   if (!url?.startsWith("/") || url.startsWith("/brand/")) return url;
-  const apiOrigin = API_BASE.endsWith("/api") ? API_BASE.slice(0, -4) : "";
-  return `${apiOrigin}${url}`;
+  return `${MEDIA_BASE}${url}`;
 }
 
 export async function apiFetch(path, options = {}) {

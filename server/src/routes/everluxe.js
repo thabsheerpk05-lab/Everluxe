@@ -65,16 +65,19 @@ router.get("/public/taxonomies", asyncHandler(async (_req, res) => {
 router.post("/public/enquiries", asyncHandler(async (req, res) => {
   const idempotencyKey = String(req.headers["idempotency-key"] || "").trim();
   if (idempotencyKey && enquiryKeys.has(idempotencyKey)) return res.status(409).json({ message: "This enquiry has already been submitted." });
-  const { fullName, phone, whatsapp, eventTypeId, eventDate, eventLocation, guestCount, preferredStyle, budgetRange, message, designIds = [], modelIds = [], packageIds = [], addonIds = [], attachments = [] } = req.body || {};
+  const { fullName, phone, whatsapp, eventTypeId, eventDate, eventLocation, guestCount, preferredStyle, budgetRange, message, designIds = [], modelIds = [], galleryIds = [], packageIds = [], addonIds = [], attachments = [] } = req.body || {};
   if (!fullName?.trim() || !phone?.trim()) return res.status(400).json({ message: "Full name and phone number are required." });
   if (String(phone).replace(/\D/g, "").length < 7) return res.status(400).json({ message: "Enter a valid phone number." });
   const selectedDesignIds = normalizeSelectionIds(designIds, modelIds);
-  const [designs, packages, addons] = await Promise.all([
+  const normalizedGalleryIds = normalizeSelectionIds(galleryIds);
+  const [designs, galleryItems, packages, addons] = await Promise.all([
     selectedDesignIds.length ? prisma.catalogueDesign.findMany({ where: { id: { in: selectedDesignIds, status: "PUBLISHED", availability: "AVAILABLE" } } }) : [],
+    normalizedGalleryIds.length ? prisma.galleryItem.findMany({ where: { id: { in: normalizedGalleryIds, status: "PUBLISHED" } } }) : [],
     packageIds.length ? prisma.eventPackage.findMany({ where: { id: { in: packageIds.map(Number) } } }) : [],
     addonIds.length ? prisma.approvedAddon.findMany({ where: { id: { in: addonIds.map(Number) } } }) : []
   ]);
   if (!allSelectionsPublished(selectedDesignIds, designs)) return res.status(400).json({ message: "One or more selected design models are no longer published or available." });
+  if (normalizedGalleryIds.length !== galleryItems.length) return res.status(400).json({ message: "One or more selected gallery references are no longer published." });
   if (addonIds.length !== addons.length) return res.status(400).json({ message: "One or more selected add-ons are not approved." });
   const requestedAttachments = Array.isArray(attachments) ? attachments.slice(0, 5) : [];
   if (requestedAttachments.some((item) => !item?.dataUrl)) return res.status(400).json({ message: "Reference attachments must be uploaded image files." });
@@ -83,7 +86,7 @@ router.post("/public/enquiries", asyncHandler(async (req, res) => {
     data: {
       reference: makePublicId("EVQ"), fullName: fullName.trim(), phone: phone.trim(), whatsapp: whatsapp?.trim() || null,
       eventTypeId: eventTypeId && Number.isFinite(Number(eventTypeId)) ? Number(eventTypeId) : null, eventDate: eventDate ? new Date(eventDate) : null, eventLocation: eventLocation?.trim() || null,
-      guestCount: guestCount ? Number(guestCount) : null, preferredStyle: preferredStyle || null, budgetRange: budgetRange || null, message: message?.trim() || null,
+      guestCount: guestCount ? Number(guestCount) : null, preferredStyle: preferredStyle || null, budgetRange: budgetRange || null, message: [message?.trim(), galleryItems.length ? `Gallery references: ${galleryItems.map((item) => item.title).join(", ")}` : null].filter(Boolean).join("\n") || null,
       selectedDesigns: { create: designs.map((design) => ({ designId: design.id, designName: design.name, price: design.price, priceType: design.priceType, priceVisible: design.priceVisibility === "PUBLIC" })) },
       selectedPackages: { create: packages.map((pkg) => ({ packageId: pkg.id, packageName: pkg.name, price: pkg.price, priceType: pkg.priceType, priceVisible: pkg.priceVisibility === "PUBLIC" })) },
       selectedAddons: { create: addons.map((addon) => ({ addonId: addon.id, addonName: addon.name, price: addon.price })) },

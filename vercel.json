@@ -8,6 +8,7 @@
     }
   },
   "rewrites": [
+    { "source": "/uploads/:path*", "destination": "https://everluxe-ca7m.onrender.com/uploads/:path*" },
     { "source": "/((?!api(?:/|$)|uploads(?:/|$)).*)", "destination": "/index.html" }
   ]
 }
