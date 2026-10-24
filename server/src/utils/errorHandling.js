@@ -9,7 +9,10 @@ export function classifyError(error) {
   if (error?.type === "entity.too.large" || error?.statusCode === 413) return { category: "validation", status: 413, code: null, message: "The uploaded file is too large." };
   if (error?.statusCode === 400) return { category: "validation", status: 400, code: null, message: error.message || "The request data is invalid." };
   if (error?.statusCode === 503) return { category: "storage", status: 503, code: null, message: error.message || "The requested storage service is unavailable." };
-  if (error instanceof Prisma.PrismaClientValidationError) return { category: "validation", status: 400, code: null, message: "The request data is invalid." };
+  if (error instanceof Prisma.PrismaClientValidationError) {
+    const detail = process.env.NODE_ENV === "production" ? "The request data is invalid." : `The request data is invalid: ${error.message.split("\n").slice(-1)[0].trim()}`;
+    return { category: "validation", status: 400, code: null, message: detail };
+  }
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
     const databaseFailure = DATABASE_CODES.has(error.code);
     return {

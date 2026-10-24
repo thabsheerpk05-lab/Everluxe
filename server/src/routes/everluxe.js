@@ -52,7 +52,7 @@ router.get("/public/taxonomies", asyncHandler(async (_req, res) => {
   } catch (error) {
     // Older development databases may not have the optional cover column yet.
     // Keep the public taxonomy usable until its non-destructive migration runs.
-    if (error?.code !== "P2010") throw error;
+    if (!["P2010", "P2022"].includes(error?.code)) throw error;
     categories = await prisma.catalogueCategory.findMany({ where: active, orderBy: { displayOrder: "asc" } });
   }
   const [styles, eventTypes] = await Promise.all([
@@ -70,15 +70,18 @@ router.post("/public/enquiries", asyncHandler(async (req, res) => {
   if (String(phone).replace(/\D/g, "").length < 7) return res.status(400).json({ message: "Enter a valid phone number." });
   const selectedDesignIds = normalizeSelectionIds(designIds, modelIds);
   const normalizedGalleryIds = normalizeSelectionIds(galleryIds);
+  const normalizedAddonIds = normalizeSelectionIds(addonIds);
   const [designs, galleryItems, packages, addons] = await Promise.all([
     selectedDesignIds.length ? prisma.catalogueDesign.findMany({ where: { id: { in: selectedDesignIds, status: "PUBLISHED", availability: "AVAILABLE" } } }) : [],
     normalizedGalleryIds.length ? prisma.galleryItem.findMany({ where: { id: { in: normalizedGalleryIds, status: "PUBLISHED" } } }) : [],
     packageIds.length ? prisma.eventPackage.findMany({ where: { id: { in: packageIds.map(Number) } } }) : [],
-    addonIds.length ? prisma.approvedAddon.findMany({ where: { id: { in: addonIds.map(Number) } } }) : []
+    // Keep this query compatible with a server that has not regenerated its
+    // Prisma client yet; the public add-on API already exposes published rows.
+    normalizedAddonIds.length ? prisma.approvedAddon.findMany({ where: { id: { in: normalizedAddonIds } } }) : []
   ]);
   if (!allSelectionsPublished(selectedDesignIds, designs)) return res.status(400).json({ message: "One or more selected design models are no longer published or available." });
   if (normalizedGalleryIds.length !== galleryItems.length) return res.status(400).json({ message: "One or more selected gallery references are no longer published." });
-  if (addonIds.length !== addons.length) return res.status(400).json({ message: "One or more selected add-ons are not approved." });
+  if (normalizedAddonIds.length !== addons.length || addons.some((addon) => addon.status && addon.status !== "PUBLISHED")) return res.status(400).json({ message: "One or more selected add-ons are not approved." });
   const requestedAttachments = Array.isArray(attachments) ? attachments.slice(0, 5) : [];
   if (requestedAttachments.some((item) => !item?.dataUrl)) return res.status(400).json({ message: "Reference attachments must be uploaded image files." });
   const privateAttachments = await Promise.all(requestedAttachments.map(async (item) => ({ fileUrl: await storeImage(item.dataUrl), originalName: item.originalName || "reference-image", mimeType: item.mimeType || "image/*", sizeBytes: Number(item.sizeBytes || 0) })));
@@ -168,7 +171,7 @@ router.get("/admin/taxonomies/:kind", asyncHandler(async (req, res) => {
     try {
       return res.json(await prisma.$queryRaw`SELECT "id", "name", "slug", "imageUrl", "displayOrder", "status", "createdAt", "updatedAt" FROM "CatalogueCategory" ORDER BY "displayOrder" ASC, "name" ASC`);
     } catch (error) {
-      if (error?.code !== "P2010") throw error;
+      if (!["P2010", "P2022"].includes(error?.code)) throw error;
       return res.json(await prisma.catalogueCategory.findMany({ orderBy: [{ displayOrder: "asc" }, { name: "asc" }] }));
     }
   }
@@ -195,7 +198,7 @@ router.put("/admin/taxonomies/:kind/:id", asyncHandler(async (req, res) => {
       await prisma.$executeRaw`UPDATE "CatalogueCategory" SET "imageUrl" = ${imageUrl}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ${id}`;
       rows = await prisma.$queryRaw`SELECT "id", "name", "slug", "imageUrl", "displayOrder", "status", "createdAt", "updatedAt" FROM "CatalogueCategory" WHERE "id" = ${id}`;
     } catch (error) {
-      if (error?.code === "P2010") return res.status(409).json({ message: "Apply the taxonomy cover-image migration to this development database before adding covers." });
+      if (["P2010", "P2022"].includes(error?.code)) return res.status(409).json({ message: "Apply the taxonomy cover-image migration to this development database before adding covers." });
       throw error;
     }
     if (!rows.length) return res.status(404).json({ message: "Taxonomy item not found." });
