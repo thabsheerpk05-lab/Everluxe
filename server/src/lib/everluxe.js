@@ -53,11 +53,39 @@ export function parseBuffer(buffer, mimeType, allowVideo = false) {
   return { buffer, extension, mimeType: normalizedType };
 }
 
-export async function storeBuffer(buffer, mimeType, allowVideo = false) {
-  const { extension } = parseBuffer(buffer, mimeType, allowVideo);
-  if (process.env.VERCEL || process.env.MEDIA_STORAGE_PROVIDER === "object") {
-    const error = new Error("Persistent media storage is not configured for this environment."); error.statusCode = 503; throw error;
+async function storeCloudinary(buffer, mimeType) {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey = process.env.CLOUDINARY_API_KEY;
+  const apiSecret = process.env.CLOUDINARY_API_SECRET;
+  if (!cloudName || !apiKey || !apiSecret) {
+    const error = new Error("Cloudinary storage is selected but its server credentials are not configured.");
+    error.statusCode = 503;
+    throw error;
   }
+  const timestamp = Math.floor(Date.now() / 1000);
+  const folder = "everluxe";
+  const signature = crypto.createHash("sha1").update(`folder=${folder}&timestamp=${timestamp}${apiSecret}`).digest("hex");
+  const form = new FormData();
+  form.append("file", new Blob([buffer], { type: mimeType }), `everluxe-${crypto.randomUUID()}`);
+  form.append("api_key", apiKey);
+  form.append("timestamp", String(timestamp));
+  form.append("folder", folder);
+  form.append("signature", signature);
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/auto/upload`, { method: "POST", body: form });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.secure_url) {
+    const error = new Error("Cloudinary could not store this file.");
+    error.statusCode = 503;
+    throw error;
+  }
+  return result.secure_url;
+}
+
+export async function storeBuffer(buffer, mimeType, allowVideo = false) {
+  const { extension, mimeType: normalizedMimeType } = parseBuffer(buffer, mimeType, allowVideo);
+  const provider = String(process.env.MEDIA_STORAGE_PROVIDER || "cloudinary").toLowerCase();
+  if (provider === "cloudinary") return storeCloudinary(buffer, normalizedMimeType);
+  if (provider !== "local") { const error = new Error("Persistent media storage is not configured for this environment."); error.statusCode = 503; throw error; }
   const directory = process.env.UPLOADS_DIR || LOCAL_UPLOADS_DIR;
   await fs.mkdir(directory, { recursive: true });
   const filename = `${crypto.randomUUID()}.${extension}`;
